@@ -59,4 +59,31 @@ class SubdivisionTest {
         val same = c.withInsertedAnchors(listOf(SegmentParam(0, 0.0), SegmentParam(1, 1.0)), IdSource()::nextId)
         assertEquals(c, same)
     }
+
+    @Test
+    fun insertedSegmentsMatchOriginalParametrically() {
+        for (count in listOf(25, 100, 500)) {
+            val original = TestShapes.random(seed = count.toLong())
+            val params = ArcLengthDistribution.distribute(original, count)
+                .filter { it.t > 1e-9 && it.t < 1 - 1e-9 }
+            val result = original.withInsertedAnchors(params, IdSource()::nextId)
+            val resultSegs = result.segments()
+            var next = 0
+            for (si in 0 until original.segmentCount) {
+                val ts = params.filter { it.segmentIndex == si }.map { it.t }.sorted()
+                val bounds = listOf(0.0) + ts + listOf(1.0)
+                for (k in 0 until bounds.size - 1) {
+                    val sub = resultSegs[next++]
+                    for (u in listOf(0.0, 0.25, 0.5, 0.75, 1.0)) {
+                        val expected = original.segment(si).at(bounds[k] + u * (bounds[k + 1] - bounds[k]))
+                        assertTrue(
+                            sub.at(u).distanceTo(expected) <= 1e-9,
+                            "count=$count segment=$si piece=$k u=$u error=${sub.at(u).distanceTo(expected)}",
+                        )
+                    }
+                }
+            }
+            assertEquals(resultSegs.size, next)
+        }
+    }
 }

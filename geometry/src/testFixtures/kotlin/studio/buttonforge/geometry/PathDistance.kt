@@ -24,14 +24,18 @@ object PathDistance {
         val pts = ArrayList<Vec2>()
         val segOf = ArrayList<Int>()
         val tOf = ArrayList<Double>()
+        var maxStep = 0.0
+        lateinit var d: DoubleArray
 
         init {
             for ((si, c) in curves.withIndex()) {
                 for (i in 0..n) {
                     val t = i.toDouble() / n
                     pts += c.at(t); segOf += si; tOf += t
+                    if (i > 0) maxStep = max(maxStep, pts[pts.size - 1].distanceTo(pts[pts.size - 2]))
                 }
             }
+            d = DoubleArray(pts.size)
         }
     }
 
@@ -50,20 +54,26 @@ object PathDistance {
     }
 
     private fun distanceToPath(p: Vec2, s: Sampled): Double {
-        var bestJ = 0
-        var bestD2 = Double.MAX_VALUE
+        val d = s.d
+        var bestD = Double.MAX_VALUE
         for (j in s.pts.indices) {
-            val dx = s.pts[j].x - p.x
-            val dy = s.pts[j].y - p.y
-            val d2 = dx * dx + dy * dy
-            if (d2 < bestD2) { bestD2 = d2; bestJ = j }
+            d[j] = s.pts[j].distanceTo(p)
+            if (d[j] < bestD) bestD = d[j]
         }
-        var best = sqrt(bestD2)
+        // Refine around every local minimum that could hide the true nearest point (e.g. at self-crossings,
+        // where another branch can be closer to p than the nearest sample of the right branch).
+        val threshold = bestD + 2.0 * s.maxStep
+        var best = bestD
         val dt = 1.0 / s.n
-        for (j in (bestJ - 1)..(bestJ + 1)) {
-            if (j !in s.pts.indices) continue
-            val curve = s.curves[s.segOf[j]]
-            best = min(best, refine(p, curve, max(0.0, s.tOf[j] - dt), min(1.0, s.tOf[j] + dt)))
+        for (j in s.pts.indices) {
+            if (d[j] > threshold) continue
+            if (j > 0 && d[j] > d[j - 1]) continue
+            if (j < s.pts.lastIndex && d[j] > d[j + 1]) continue
+            for (k in (j - 1)..(j + 1)) {
+                if (k !in s.pts.indices) continue
+                val curve = s.curves[s.segOf[k]]
+                best = min(best, refine(p, curve, max(0.0, s.tOf[k] - dt), min(1.0, s.tOf[k] + dt)))
+            }
         }
         return best
     }
