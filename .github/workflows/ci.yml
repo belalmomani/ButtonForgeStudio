@@ -11,6 +11,14 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      # Installs Gradle itself, so no committed wrapper is needed yet.
+      # When gradlew is committed, switch back to ./gradlew and drop gradle-version.
       - uses: gradle/actions/setup-gradle@v4
-      # Requires gradlew to be committed (see README).
-      - run: ./gradlew :geometry:test
+        with:
+          gradle-version: 8.10.2
+      - run: gradle :geometry:test --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: geometry-test-reports
+          path: geometry/build/reports/tests/test
