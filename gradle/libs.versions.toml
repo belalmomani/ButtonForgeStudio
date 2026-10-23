@@ -1,0 +1,6 @@
+# VERSIONS ARE UNVERIFIED: pinned from memory, update to current stable before the first build.
+[versions]
+kotlin = "2.0.21"
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
