@@ -8,47 +8,76 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * Test-only metric: symmetric Hausdorff distance between two contours, via dense polylines.
- * Accuracy is bounded by the sampling (see PathDistanceSelfTest); not a certified bound.
+ * Test-only metric: symmetric Hausdorff distance between two contours.
+ * Each point of one contour is a point on its exact curve; the distance to the other contour is found by a
+ * nearest-sample search followed by local golden-section refinement on the exact curve, so the polyline
+ * sampling error does not enter the result. See PathDistanceSelfTest.
  */
 object PathDistance {
     private const val SAMPLE_BUDGET = 20_000
 
-    /** Fewer samples per segment when a contour has many segments, so the O(n*m) distance stays fast. */
     private fun samplesPerSegment(segmentCount: Int): Int = (SAMPLE_BUDGET / maxOf(1, segmentCount)).coerceIn(8, 2048)
 
-    fun polyline(contour: Contour): List<Vec2> {
+    private class Sampled(contour: Contour) {
+        val curves: List<CubicBezier> = contour.segments()
+        val n: Int = samplesPerSegment(curves.size)
         val pts = ArrayList<Vec2>()
-        val n = samplesPerSegment(contour.segmentCount)
-        for (seg: CubicBezier in contour.segments()) {
-            for (i in 0..n) pts += seg.at(i.toDouble() / n)
+        val segOf = ArrayList<Int>()
+        val tOf = ArrayList<Double>()
+
+        init {
+            for ((si, c) in curves.withIndex()) {
+                for (i in 0..n) {
+                    val t = i.toDouble() / n
+                    pts += c.at(t); segOf += si; tOf += t
+                }
+            }
         }
-        return pts
     }
+
+    fun polyline(contour: Contour): List<Vec2> = Sampled(contour).pts
 
     fun hausdorff(a: Contour, b: Contour): Double {
-        val pa = polyline(a)
-        val pb = polyline(b)
-        return max(oneWay(pa, pb), oneWay(pb, pa))
+        val sa = Sampled(a)
+        val sb = Sampled(b)
+        return max(oneWay(sa, sb), oneWay(sb, sa))
     }
 
-    private fun oneWay(from: List<Vec2>, to: List<Vec2>): Double {
+    private fun oneWay(from: Sampled, to: Sampled): Double {
         var worst = 0.0
-        for (p in from) {
-            var best = Double.MAX_VALUE
-            for (i in 0 until to.size - 1) best = min(best, distToSegment(p, to[i], to[i + 1]))
-            worst = max(worst, best)
-        }
+        for (p in from.pts) worst = max(worst, distanceToPath(p, to))
         return worst
     }
 
-    private fun distToSegment(p: Vec2, a: Vec2, b: Vec2): Double {
-        val ab = b - a
-        val len2 = ab.x * ab.x + ab.y * ab.y
-        if (len2 == 0.0) return p.distanceTo(a)
-        val t = (((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / len2).coerceIn(0.0, 1.0)
-        val proj = Vec2(a.x + ab.x * t, a.y + ab.y * t)
-        return sqrt((p.x - proj.x) * (p.x - proj.x) + (p.y - proj.y) * (p.y - proj.y))
+    private fun distanceToPath(p: Vec2, s: Sampled): Double {
+        var bestJ = 0
+        var bestD2 = Double.MAX_VALUE
+        for (j in s.pts.indices) {
+            val dx = s.pts[j].x - p.x
+            val dy = s.pts[j].y - p.y
+            val d2 = dx * dx + dy * dy
+            if (d2 < bestD2) { bestD2 = d2; bestJ = j }
+        }
+        var best = sqrt(bestD2)
+        val dt = 1.0 / s.n
+        for (j in (bestJ - 1)..(bestJ + 1)) {
+            if (j !in s.pts.indices) continue
+            val curve = s.curves[s.segOf[j]]
+            best = min(best, refine(p, curve, max(0.0, s.tOf[j] - dt), min(1.0, s.tOf[j] + dt)))
+        }
+        return best
+    }
+
+    private fun refine(p: Vec2, c: CubicBezier, lo0: Double, hi0: Double): Double {
+        var lo = lo0
+        var hi = hi0
+        val g = 0.6180339887498949
+        repeat(60) {
+            val m1 = hi - g * (hi - lo)
+            val m2 = lo + g * (hi - lo)
+            if (c.at(m1).distanceTo(p) < c.at(m2).distanceTo(p)) hi = m2 else lo = m1
+        }
+        return c.at((lo + hi) / 2.0).distanceTo(p)
     }
 
     fun diagonal(c: Contour): Double {

@@ -3,6 +3,7 @@ package studio.buttonforge.geometry
 import studio.buttonforge.geometry.bezier.CubicBezier
 import studio.buttonforge.geometry.math.Vec2
 import studio.buttonforge.geometry.ops.ArcLengthDistribution
+import studio.buttonforge.geometry.path.SegmentParam
 import studio.buttonforge.geometry.path.withInsertedAnchors
 import kotlin.random.Random
 import kotlin.test.Test
@@ -33,7 +34,7 @@ class SubdivisionTest {
             val original = TestShapes.random(seed = count.toLong())
             val ids = IdSource()
             val params = ArcLengthDistribution.distribute(original, count)
-                .filter { it.t > 1e-9 && it.t < 1 - 1e-9 } // parameters at segment ends are existing anchors
+                .filter { it.t > 1e-9 && it.t < 1 - 1e-9 } // end parameters are existing anchors and add nothing
             val result = original.withInsertedAnchors(params, ids::nextId)
             assertEquals(original.anchors.size + params.size, result.anchors.size)
             assertEquals(result.anchors.size, result.anchors.map { it.id }.toSet().size)
@@ -46,9 +47,16 @@ class SubdivisionTest {
     fun originalAnchorIdsAreKept() {
         val original = TestShapes.square()
         val result = original.withInsertedAnchors(
-            ArcLengthDistribution.distribute(original, 12).filter { it.t > 1e-9 },
+            ArcLengthDistribution.distribute(original, 12),
             IdSource()::nextId,
         )
         assertTrue(result.anchors.map { it.id }.containsAll(original.anchors.map { it.id }))
+    }
+
+    @Test
+    fun parametersAtSegmentEndsInsertNothing() {
+        val c = TestShapes.square()
+        val same = c.withInsertedAnchors(listOf(SegmentParam(0, 0.0), SegmentParam(1, 1.0)), IdSource()::nextId)
+        assertEquals(c, same)
     }
 }
