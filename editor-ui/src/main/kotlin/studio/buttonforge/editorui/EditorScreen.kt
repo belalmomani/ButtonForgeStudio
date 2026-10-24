@@ -65,8 +65,9 @@ fun EditorScreen(
     message: String?,
     modifier: Modifier = Modifier,
 ) {
-    @Suppress("UNUSED_VARIABLE")
-    val revision = host.revision // read so the screen redraws after every edit
+    // Read here so this screen recomposes after every edit, and passed down so the children below are not skipped:
+    // the session is a plain object, so Compose cannot see changes inside it.
+    val revision = host.revision
     Column(modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
@@ -78,9 +79,9 @@ fun EditorScreen(
             OutlinedButton(onClick = onOpen) { Text("فتح") }
             OutlinedButton(onClick = onNew) { Text("جديد") }
         }
-        EditorCanvas(host, Modifier.weight(1f).fillMaxWidth())
+        EditorCanvas(host, revision, Modifier.weight(1f).fillMaxWidth())
         if (message != null) Text(message, Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-        ControlPanel(host)
+        ControlPanel(host, revision)
     }
 }
 
@@ -93,8 +94,9 @@ private fun ToggleButton(text: String, selected: Boolean, enabled: Boolean = tru
     }
 }
 
+@Suppress("UNUSED_PARAMETER")
 @Composable
-private fun ControlPanel(host: EditorHost) {
+private fun ControlPanel(host: EditorHost, revision: Int) {
     val session = host.session
     val state = session.state
     val selected = state.selectedLayer
@@ -154,8 +156,9 @@ private fun defaultLook() = Appearance(
     strokes = listOf(ModelStroke(Paint.Solid(ModelColor(0xFF1B2A6B.toInt())), width = 4.0)),
 )
 
+@Suppress("UNUSED_PARAMETER")
 @Composable
-private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
+private fun EditorCanvas(host: EditorHost, revision: Int, modifier: Modifier) {
     val density = LocalDensity.current
     val touch = remember(density) { TouchSettings(hitRadiusPx = with(density) { 24.dp.toPx() }.toDouble()) }
     val session = host.session
@@ -213,6 +216,8 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
                 }
             },
     ) {
+        // Reading the revision inside the draw block makes every edit redraw the canvas.
+        check(host.revision >= 0)
         val vp = host.viewport
         drawIntoCanvas { c ->
             SceneRenderer.draw(c.nativeCanvas, host.session.document, vp.scale.toFloat(), vp.offsetX.toFloat(), vp.offsetY.toFloat())
