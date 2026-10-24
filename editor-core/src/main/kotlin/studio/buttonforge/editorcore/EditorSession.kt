@@ -5,6 +5,8 @@ import studio.buttonforge.document.IdAllocator
 import studio.buttonforge.document.appearance.Appearance
 import studio.buttonforge.document.layers.LayerId
 import studio.buttonforge.document.layers.ShapeLayer
+import studio.buttonforge.document.layers.addLayer
+import studio.buttonforge.document.shape.Shape
 import studio.buttonforge.document.layers.findLayer
 import studio.buttonforge.document.shape.Transform
 import studio.buttonforge.editorcore.commands.AnchorMove
@@ -20,6 +22,7 @@ import studio.buttonforge.editorcore.points.PointTool
 import studio.buttonforge.geometry.math.Vec2
 import studio.buttonforge.geometry.ops.ArcLengthDistribution
 import studio.buttonforge.geometry.path.AnchorId
+import studio.buttonforge.geometry.path.CompoundPath
 import studio.buttonforge.geometry.path.SegmentParam
 import studio.buttonforge.geometry.path.withInsertedAnchors
 
@@ -169,6 +172,18 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         if (after.layers === before.layers && after.states === before.states) return
         if (after.layers == before.layers && after.states == before.states) return
         execute(SetLayersCommand(before.layers, after.layers, before.states, after.states, after.counters, label))
+    }
+
+    /** Creates a shape layer on top, selects it, and makes it one undoable step. [build] receives an anchor id source. */
+    fun addShapeLayer(name: String, appearance: Appearance, build: (() -> AnchorId) -> CompoundPath): LayerId {
+        val alloc = IdAllocator(document.counters)
+        val geometry = build(alloc::nextAnchorId)
+        val id = alloc.nextLayerId()
+        val node = ShapeLayer(id, name, shape = Shape(geometry, appearance))
+        val counters = alloc.counters()
+        updateLayers("Add shape") { it.addLayer(node).copy(counters = counters) }
+        selectLayer(id)
+        return id
     }
 
     // ---------- selection and modes ----------

@@ -25,3 +25,8 @@ Not included yet: the schema snapshot test (needs one green run to generate the 
 Adds `:editor-core` (undo/redo history, drag transactions, point editing, shape/points modes, touch controller)
 plus `HitTester` and `ArcLengthDistribution.fillTo` in `:geometry`, and `Transform.toWorld/toLocal` in `:document`.
 Verify: `gradle test --continue` (or the four module test tasks).
+
+## Phase 1, step 5 (first APK)
+Adds `:renderer`, `:editor-ui`, `:app`, geometry primitives, `Viewport`, `addShapeLayer`.
+The debug APK is built by `.github/workflows/build-apk.yml` (artifact `ButtonForgeStudio-debug-apk`) or locally with
+`gradle :app:assembleDebug`. minSdk is 26 (the storage module uses java.nio.file). Versions in `libs.versions.toml` are unverified.
