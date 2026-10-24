@@ -16,8 +16,8 @@ dependencyResolutionManagement {
     }
 }
 
-// Phase 1, steps 1-5. designsystem is not created: it would hold nothing but a theme wrapper (theme lives in :app).
+// Phase 1, steps 1-6. designsystem is not created: it would hold nothing but a theme wrapper (theme lives in :app).
 include(
     ":geometry", ":document", ":project-storage", ":editor-core",
-    ":renderer", ":editor-ui", ":app",
+    ":renderer", ":editor-ui", ":app", ":integration-tests",
 )

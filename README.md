@@ -30,3 +30,7 @@ Verify: `gradle test --continue` (or the four module test tasks).
 Adds `:renderer`, `:editor-ui`, `:app`, geometry primitives, `Viewport`, `addShapeLayer`.
 The debug APK is built by `.github/workflows/build-apk.yml` (artifact `ButtonForgeStudio-debug-apk`) or locally with
 `gradle :app:assembleDebug`. minSdk is 26 (the storage module uses java.nio.file). Versions in `libs.versions.toml` are unverified.
+
+## Phase 1, step 6
+Adds `:integration-tests` (editor -> storage round trip, hand-written v1 fixture, opt-in perf baseline),
+`docs/boolean-ops-spike.md`, `docs/performance.md`, and the manual workflow `perf-baseline.yml`.
