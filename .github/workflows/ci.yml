@@ -16,7 +16,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.10.2
-      - run: gradle :geometry:test :document:test --continue --stacktrace
+      - run: gradle :geometry:test :document:test :project-storage:test --continue --stacktrace
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -24,3 +24,4 @@ jobs:
           path: |
             geometry/build/reports/tests/test
             document/build/reports/tests/test
+            project-storage/build/reports/tests/test

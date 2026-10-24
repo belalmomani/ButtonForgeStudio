@@ -16,5 +16,5 @@ dependencyResolutionManagement {
     }
 }
 
-// Phase 1, steps 1-2: only modules that exist are included.
-include(":geometry", ":document")
+// Phase 1, steps 1-3: only modules that exist are included.
+include(":geometry", ":document", ":project-storage")

@@ -1,6 +1,11 @@
-# VERSIONS ARE UNVERIFIED: pinned from memory, update to current stable before the first build.
+# VERSIONS ARE UNVERIFIED: pinned from memory, update to current stable before relying on them.
 [versions]
 kotlin = "2.0.21"
+kotlinx-serialization = "1.7.3"
+
+[libraries]
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
