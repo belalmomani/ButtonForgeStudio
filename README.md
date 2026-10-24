@@ -11,3 +11,7 @@ then commit `gradlew`, `gradlew.bat` and `gradle/wrapper/`. Update the unverifie
 
 ## Verify
     ./gradlew :geometry:test
+
+## Phase 1, step 2
+Adds `:document` (layers, shapes with separate geometry/appearance, button states, export settings, id counters).
+Verify: `gradle :geometry:test :document:test --continue`
