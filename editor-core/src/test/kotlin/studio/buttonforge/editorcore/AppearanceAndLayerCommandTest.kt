@@ -77,7 +77,9 @@ class AppearanceAndLayerCommandTest {
         assertNull(s.document.findLayer(LayerId(2)))
         s.redo()
         assertNotNull(s.document.findLayer(LayerId(2)))
-        assertEquals(2, s.history.undoSize)
+        // add, remove, undo, undo, redo: only "add" is back on the undo stack, "remove" waits on the redo stack
+        assertEquals(1, s.history.undoSize)
+        assertEquals(1, s.history.redoSize)
     }
 
     @Test
