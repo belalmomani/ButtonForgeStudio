@@ -37,4 +37,36 @@ object ArcLengthDistribution {
         }
         return result
     }
+
+    /**
+     * Positions of the extra anchors needed to bring the contour to exactly [targetCount] anchors, spaced as
+     * evenly as possible by arc length. Existing anchors are never duplicated. Read-only, like [distribute].
+     * Returns an empty list when nothing is needed or the contour has no length.
+     */
+    fun fillTo(contour: Contour, targetCount: Int): List<SegmentParam> {
+        require(targetCount >= contour.anchors.size) { "targetCount ${targetCount} is below the current ${contour.anchors.size} anchors" }
+        val missing = targetCount - contour.anchors.size
+        val segments = contour.segments()
+        if (missing == 0 || segments.isEmpty()) return emptyList()
+        val lengths = segments.map { ArcLength.length(it) }
+        if (lengths.sum() < MIN_LENGTH) return emptyList()
+
+        // Give each new point to the segment whose pieces are currently longest.
+        val extra = IntArray(segments.size)
+        repeat(missing) {
+            var best = 0
+            for (i in segments.indices) {
+                if (lengths[i] / (extra[i] + 1) > lengths[best] / (extra[best] + 1)) best = i
+            }
+            extra[best]++
+        }
+        val result = ArrayList<SegmentParam>(missing)
+        for (i in segments.indices) {
+            for (j in 1..extra[i]) {
+                val s = j * lengths[i] / (extra[i] + 1)
+                result += SegmentParam(i, ArcLength.parameterAtLength(segments[i], s, lengths[i]))
+            }
+        }
+        return result
+    }
 }
