@@ -107,3 +107,26 @@ class SetLayersCommand(
 
     override fun revert(doc: Document): Document = doc.copy(layers = beforeLayers, states = beforeStates)
 }
+
+/** One anchor's handles and corner type (its position and id do not change). Used for handle drags. */
+class SetAnchorCommand(val layerId: LayerId, val before: Anchor, val after: Anchor) : Command {
+    init {
+        require(before.id == after.id) { "SetAnchorCommand cannot change an anchor's id" }
+    }
+
+    override val label: String = "Edit handle"
+
+    override fun apply(doc: Document): Document = place(doc, after)
+    override fun revert(doc: Document): Document = place(doc, before)
+
+    private fun place(doc: Document, target: Anchor): Document = doc.updateShape(layerId) { shape ->
+        shape.copy(geometry = shape.geometry.mapAnchors { a -> if (a.id == target.id) target else a })
+    }
+}
+
+/** Several commands as one undo step. */
+class CompositeCommand(override val label: String, private val parts: List<Command>) : Command {
+    override val cost: Int get() = parts.sumOf { it.cost }
+    override fun apply(doc: Document): Document = parts.fold(doc) { d, c -> c.apply(d) }
+    override fun revert(doc: Document): Document = parts.asReversed().fold(doc) { d, c -> c.revert(d) }
+}

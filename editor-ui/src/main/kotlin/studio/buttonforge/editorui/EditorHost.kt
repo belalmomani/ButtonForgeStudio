@@ -6,8 +6,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import studio.buttonforge.document.Document
+import studio.buttonforge.editorcore.ContourReplacement
 import studio.buttonforge.editorcore.EditorSession
 import studio.buttonforge.editorcore.input.Viewport
+import studio.buttonforge.editorcore.points.EditMode
 import studio.buttonforge.editorcore.points.EditorState
 
 /**
@@ -34,6 +36,14 @@ class EditorHost(initial: Document) {
     var revision: Int by mutableIntStateOf(0)
         private set
 
+    /** A proposed re-pointing waiting for the user to accept or cancel it. */
+    var pending: ContourReplacement? by mutableStateOf(null)
+        private set
+
+    /** A short message for the user (a refused operation, for example). */
+    var notice: String? by mutableStateOf(null)
+        private set
+
     private var viewWidth = 0
     private var viewHeight = 0
     private var fitted = false
@@ -56,11 +66,43 @@ class EditorHost(initial: Document) {
         publish()
     }
 
+    /** Computes a preview without changing the document. A refused request becomes a notice. */
+    fun preview(block: (EditorSession) -> ContourReplacement) {
+        notice = null
+        pending = try {
+            block(session)
+        } catch (e: IllegalArgumentException) {
+            notice = e.message
+            null
+        }
+    }
+
+    fun applyPending() {
+        val p = pending ?: return
+        pending = null
+        try {
+            edit { it.applyReplacement(p) }
+            notice = null
+        } catch (e: IllegalStateException) {
+            notice = "تغيّر المستند بعد المعاينة، أعد المعاينة"
+        }
+    }
+
+    fun cancelPending() {
+        pending = null
+    }
+
+    fun showNotice(message: String?) {
+        notice = message
+    }
+
     private fun publish() {
         document = session.document
         editorState = session.state
         undoCount = session.history.undoSize
         redoCount = session.history.redoSize
+        val p = pending
+        if (p != null && (!session.isCurrent(p) || session.state.mode != EditMode.Points)) pending = null
         revision++
     }
 

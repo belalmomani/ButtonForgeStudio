@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedButton
@@ -24,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -49,16 +52,19 @@ import studio.buttonforge.editorcore.input.Viewport
 import studio.buttonforge.editorcore.points.EditMode
 import studio.buttonforge.editorcore.points.PointTool
 import studio.buttonforge.editorcore.points.TouchSettings
+import studio.buttonforge.editorcore.ContourReplacement
 import studio.buttonforge.geometry.math.Vec2
+import studio.buttonforge.geometry.path.CornerType
 import studio.buttonforge.geometry.primitives.Primitives
 import studio.buttonforge.renderer.SceneRenderer
 import studio.buttonforge.document.appearance.Color as ModelColor
 import studio.buttonforge.document.appearance.Stroke as ModelStroke
 
 /** Shown on screen so it is clear which build is installed. */
-private const val BUILD_TAG = "6د"
+private const val BUILD_TAG = "7أ"
 
 private val POINT_COUNTS = listOf(25, 50, 100, 250, 500)
+private val SIMPLIFY_TOLERANCES = listOf(0.5, 1.0, 2.0)
 
 @Composable
 fun EditorScreen(
@@ -105,7 +111,10 @@ private fun ControlPanel(host: EditorHost) {
     val anchorCount = if (selected == null) 0 else
         (doc.findLayer(selected) as? ShapeLayer)?.shape?.geometry?.contours?.firstOrNull()?.anchors?.size ?: 0
 
-    Column(Modifier.fillMaxWidth().padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(
+        Modifier.fillMaxWidth().heightIn(max = 260.dp).verticalScroll(rememberScrollState()).padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         // layers
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for (node in flatten(doc.layers)) {
@@ -135,17 +144,49 @@ private fun ControlPanel(host: EditorHost) {
                 ToggleButton("حذف", state.pointTool == PointTool.DeletePoint) { host.edit { it.setPointTool(PointTool.DeletePoint) } }
             }
         }
-        // point count
         if (state.mode == EditMode.Points && selected != null) {
+            val ids = state.selectedAnchors
+            if (ids.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("نوع النقطة (${ids.size}):", Modifier.padding(top = 10.dp))
+                    OutlinedButton(onClick = { host.edit { it.setCornerType(selected, ids, CornerType.Sharp) } }) { Text("حاد") }
+                    OutlinedButton(onClick = { host.edit { it.setCornerType(selected, ids, CornerType.Smooth) } }) { Text("ناعم") }
+                    OutlinedButton(onClick = { host.edit { it.setCornerType(selected, ids, CornerType.Symmetric) } }) { Text("متماثل") }
+                }
+            }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("النقاط: $anchorCount", Modifier.padding(top = 10.dp))
+                Text("النقاط: $anchorCount | إضافة بنفس الشكل:", Modifier.padding(top = 10.dp))
                 for (n in POINT_COUNTS) {
                     OutlinedButton(onClick = { host.edit { it.addPointsToCount(selected, 0, n) } }, enabled = n > anchorCount) {
                         Text("$n")
                     }
                 }
             }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("إعادة توزيع (تقريبي):", Modifier.padding(top = 10.dp))
+                for (n in POINT_COUNTS) {
+                    OutlinedButton(onClick = { host.preview { it.previewRecount(selected, 0, n) } }) { Text("$n") }
+                }
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("تبسيط (الانحراف الأقصى):", Modifier.padding(top = 10.dp))
+                for (tol in SIMPLIFY_TOLERANCES) {
+                    OutlinedButton(onClick = { host.preview { it.previewSimplify(selected, 0, tol) } }) { Text("$tol") }
+                }
+            }
+            val pending = host.pending
+            if (pending != null) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "معاينة: ${pending.after.anchors.size} نقطة، أقصى انحراف ${"%.2f".format(pending.maxError)}",
+                        Modifier.padding(top = 10.dp),
+                    )
+                    Button(onClick = { host.applyPending() }) { Text("تطبيق") }
+                    OutlinedButton(onClick = { host.cancelPending() }) { Text("إلغاء") }
+                }
+            }
         }
+        host.notice?.let { Text(it, Modifier.padding(top = 2.dp)) }
     }
 }
 
@@ -234,12 +275,12 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
         drawIntoCanvas { c ->
             SceneRenderer.draw(c.nativeCanvas, document, vp.scale.toFloat(), vp.offsetX.toFloat(), vp.offsetY.toFloat())
         }
-        drawPointOverlay(document, editorState, vp)
+        drawPointOverlay(document, editorState, vp, host.pending)
     }
 }
 
 /** Draws anchors and the handles of selected anchors. Visible size is independent of the touch target size. */
-private fun DrawScope.drawPointOverlay(document: Document, state: EditorState, vp: Viewport) {
+private fun DrawScope.drawPointOverlay(document: Document, state: EditorState, vp: Viewport, pending: ContourReplacement?) {
     if (state.mode != EditMode.Points) return
     val layerId = state.selectedLayer ?: return
     val layer = document.findLayer(layerId) as? ShapeLayer ?: return
@@ -248,6 +289,22 @@ private fun DrawScope.drawPointOverlay(document: Document, state: EditorState, v
     fun screen(p: Vec2): Offset {
         val s = vp.toScreen(t.toWorld(p))
         return Offset(s.x.toFloat(), s.y.toFloat())
+    }
+
+    if (pending != null && pending.layerId == layerId) {
+        val path = Path()
+        val segments = pending.after.segments()
+        if (segments.isNotEmpty()) {
+            val first = screen(segments.first().p0)
+            path.moveTo(first.x, first.y)
+            for (c in segments) {
+                val p1 = screen(c.p1)
+                val p2 = screen(c.p2)
+                val p3 = screen(c.p3)
+                path.cubicTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y)
+            }
+            drawPath(path, Color(0xFFD500F9), style = Stroke(width = 2.dp.toPx()))
+        }
     }
 
     val radius = 5.dp.toPx()

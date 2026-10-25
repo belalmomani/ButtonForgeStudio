@@ -38,3 +38,7 @@ Adds `:integration-tests` (editor -> storage round trip, hand-written v1 fixture
 ## Phase 2, step 1
 Adds operations 3 and 4 to `:geometry` (`Resampling`, `CurveRefit` with corner detection, `PathError`) and
 `previewRecount` / `previewSimplify` / `applyReplacement` to `EditorSession`. JVM only; no UI changes yet.
+
+## Phase 2, step 2
+Handle dragging (the other handle follows Sharp / Smooth / Symmetric), corner-type buttons, and a preview-then-apply
+panel for approximate re-pointing and simplifying. Build tag on screen: "7أ".

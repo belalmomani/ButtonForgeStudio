@@ -12,8 +12,10 @@ import studio.buttonforge.document.shape.Shape
 import studio.buttonforge.document.layers.findLayer
 import studio.buttonforge.document.shape.Transform
 import studio.buttonforge.editorcore.commands.AnchorMove
+import studio.buttonforge.editorcore.commands.CompositeCommand
 import studio.buttonforge.editorcore.commands.MoveAnchorsCommand
 import studio.buttonforge.editorcore.commands.ReplaceContourCommand
+import studio.buttonforge.editorcore.commands.SetAnchorCommand
 import studio.buttonforge.editorcore.commands.SetAppearanceCommand
 import studio.buttonforge.editorcore.commands.SetLayersCommand
 import studio.buttonforge.editorcore.history.Command
@@ -27,9 +29,14 @@ import studio.buttonforge.geometry.ops.ArcLengthDistribution
 import studio.buttonforge.geometry.ops.CurveRefit
 import studio.buttonforge.geometry.ops.PathError
 import studio.buttonforge.geometry.ops.Resampling
+import studio.buttonforge.geometry.path.Anchor
 import studio.buttonforge.geometry.path.AnchorId
 import studio.buttonforge.geometry.path.CompoundPath
 import studio.buttonforge.geometry.path.Contour
+import studio.buttonforge.geometry.path.CornerType
+import studio.buttonforge.geometry.path.HandleSide
+import studio.buttonforge.geometry.path.withCornerType
+import studio.buttonforge.geometry.path.withHandle
 import studio.buttonforge.geometry.path.SegmentParam
 import studio.buttonforge.geometry.path.withInsertedAnchors
 
@@ -52,7 +59,19 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         var moves: List<AnchorMove>? = null
     }
 
+    private class HandleDrag(
+        val layerId: LayerId,
+        val base: Document,
+        val before: Anchor,
+        val side: HandleSide,
+        val start: Vec2,
+        val transform: Transform,
+    ) {
+        var after: Anchor? = null
+    }
+
     private var drag: AnchorDrag? = null
+    private var handleDrag: HandleDrag? = null
 
     // ---------- history ----------
 
@@ -116,12 +135,67 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
     }
 
     fun cancelAnchorDrag() {
+        handleDrag?.let {
+            handleDrag = null
+            document = it.base
+        }
         val d = drag ?: return
         drag = null
         document = d.base
     }
 
-    val isDragging: Boolean get() = drag != null
+    val isDragging: Boolean get() = drag != null || handleDrag != null
+
+    // ---------- dragging a Bézier handle: one history entry per drag ----------
+
+    fun beginHandleDrag(layerId: LayerId, anchorId: AnchorId, side: HandleSide): Boolean {
+        cancelAnchorDrag()
+        val layer = document.findLayer(layerId) as? ShapeLayer ?: return false
+        val anchor = layer.shape.geometry.contours.flatMap { it.anchors }.firstOrNull { it.id == anchorId } ?: return false
+        val start = if (side == HandleSide.In) anchor.handleIn else anchor.handleOut
+        handleDrag = HandleDrag(layerId, document, anchor, side, start, layer.shape.transform)
+        return true
+    }
+
+    /** [worldDelta] is the total displacement since the drag began. The other handle follows the corner type. */
+    fun updateHandleDrag(worldDelta: Vec2) {
+        val d = handleDrag ?: return
+        val local = d.transform.vectorToLocal(worldDelta) ?: return
+        val after = d.before.withHandle(d.side, d.start + local)
+        d.after = after
+        document = SetAnchorCommand(d.layerId, d.before, after).apply(d.base)
+    }
+
+    fun commitHandleDrag(): Boolean {
+        val d = handleDrag ?: return false
+        handleDrag = null
+        val after = d.after
+        if (after == null || after == d.before) {
+            document = d.base
+            return false
+        }
+        history.record(SetAnchorCommand(d.layerId, d.before, after))
+        normalizeState()
+        return true
+    }
+
+    /** Changes the corner type of the given anchors as one undo step. Smooth and Symmetric reshape the curve. */
+    fun setCornerType(layerId: LayerId, anchorIds: Set<AnchorId>, type: CornerType): Boolean {
+        val layer = document.findLayer(layerId) as? ShapeLayer ?: return false
+        val parts = ArrayList<studio.buttonforge.editorcore.history.Command>()
+        for ((ci, contour) in layer.shape.geometry.contours.withIndex()) {
+            var updated = contour
+            for ((ai, anchor) in contour.anchors.withIndex()) {
+                if (anchor.id in anchorIds) updated = updated.withCornerType(ai, type)
+            }
+            if (updated != contour) {
+                parts += ReplaceContourCommand(layerId, ci, contour, updated, document.counters, "Corner type")
+            }
+        }
+        if (parts.isEmpty()) return false
+        execute(if (parts.size == 1) parts[0] else CompositeCommand("Corner type", parts))
+        return true
+    }
 
     // ---------- point editing ----------
 
@@ -200,13 +274,16 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         )
     }
 
-    /** Applies a preview as one undoable step. Fails if the document changed since the preview was made. */
-    fun applyReplacement(replacement: ContourReplacement) {
+    /** True while the document is exactly as it was when [replacement] was previewed. */
+    fun isCurrent(replacement: ContourReplacement): Boolean {
         val current = (document.findLayer(replacement.layerId) as? ShapeLayer)
             ?.shape?.geometry?.contours?.getOrNull(replacement.contourIndex)
-        check(current == replacement.before && document.counters == replacement.countersBefore) {
-            "The document changed since the preview was made"
-        }
+        return current == replacement.before && document.counters == replacement.countersBefore
+    }
+
+    /** Applies a preview as one undoable step. Fails if the document changed since the preview was made. */
+    fun applyReplacement(replacement: ContourReplacement) {
+        check(isCurrent(replacement)) { "The document changed since the preview was made" }
         execute(
             ReplaceContourCommand(
                 replacement.layerId, replacement.contourIndex, replacement.before, replacement.after,
