@@ -40,7 +40,8 @@ import studio.buttonforge.document.layers.GroupLayer
 import studio.buttonforge.document.layers.LayerNode
 import studio.buttonforge.document.layers.ShapeLayer
 import studio.buttonforge.document.layers.findLayer
-import studio.buttonforge.editorcore.EditorSession
+import studio.buttonforge.document.Document
+import studio.buttonforge.editorcore.points.EditorState
 import studio.buttonforge.editorcore.PointModeController
 import studio.buttonforge.editorcore.input.PointerEvent
 import studio.buttonforge.editorcore.input.PointerType
@@ -54,6 +55,9 @@ import studio.buttonforge.renderer.SceneRenderer
 import studio.buttonforge.document.appearance.Color as ModelColor
 import studio.buttonforge.document.appearance.Stroke as ModelStroke
 
+/** Shown on screen so it is clear which build is installed. */
+private const val BUILD_TAG = "6د"
+
 private val POINT_COUNTS = listOf(25, 50, 100, 250, 500)
 
 @Composable
@@ -65,23 +69,21 @@ fun EditorScreen(
     message: String?,
     modifier: Modifier = Modifier,
 ) {
-    // Read here so this screen recomposes after every edit, and passed down so the children below are not skipped:
-    // the session is a plain object, so Compose cannot see changes inside it.
-    val revision = host.revision
     Column(modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            OutlinedButton(onClick = { host.edit { it.undo() } }, enabled = host.session.history.undoSize > 0) { Text("تراجع") }
-            OutlinedButton(onClick = { host.edit { it.redo() } }, enabled = host.session.history.redoSize > 0) { Text("إعادة") }
+            OutlinedButton(onClick = { host.edit { it.undo() } }, enabled = host.undoCount > 0) { Text("تراجع") }
+            OutlinedButton(onClick = { host.edit { it.redo() } }, enabled = host.redoCount > 0) { Text("إعادة") }
             Button(onClick = onSave) { Text("حفظ") }
             OutlinedButton(onClick = onOpen) { Text("فتح") }
             OutlinedButton(onClick = onNew) { Text("جديد") }
+            Text("نسخة $BUILD_TAG", Modifier.padding(top = 12.dp))
         }
-        EditorCanvas(host, revision, Modifier.weight(1f).fillMaxWidth())
+        EditorCanvas(host, Modifier.weight(1f).fillMaxWidth())
         if (message != null) Text(message, Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-        ControlPanel(host, revision)
+        ControlPanel(host)
     }
 }
 
@@ -94,20 +96,19 @@ private fun ToggleButton(text: String, selected: Boolean, enabled: Boolean = tru
     }
 }
 
-@Suppress("UNUSED_PARAMETER")
 @Composable
-private fun ControlPanel(host: EditorHost, revision: Int) {
-    val session = host.session
-    val state = session.state
+private fun ControlPanel(host: EditorHost) {
+    val doc = host.document
+    val state = host.editorState
     val selected = state.selectedLayer
-    val hasShape = flatten(session.document.layers).any { it is ShapeLayer }
+    val hasShape = flatten(doc.layers).any { it is ShapeLayer }
     val anchorCount = if (selected == null) 0 else
-        (session.document.findLayer(selected) as? ShapeLayer)?.shape?.geometry?.contours?.firstOrNull()?.anchors?.size ?: 0
+        (doc.findLayer(selected) as? ShapeLayer)?.shape?.geometry?.contours?.firstOrNull()?.anchors?.size ?: 0
 
     Column(Modifier.fillMaxWidth().padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // layers
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (node in flatten(session.document.layers)) {
+            for (node in flatten(doc.layers)) {
                 ToggleButton(node.name, node.id == selected) { host.edit { it.selectLayer(node.id) } }
             }
         }
@@ -156,9 +157,8 @@ private fun defaultLook() = Appearance(
     strokes = listOf(ModelStroke(Paint.Solid(ModelColor(0xFF1B2A6B.toInt())), width = 4.0)),
 )
 
-@Suppress("UNUSED_PARAMETER")
 @Composable
-private fun EditorCanvas(host: EditorHost, revision: Int, modifier: Modifier) {
+private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
     val density = LocalDensity.current
     val touch = remember(density) { TouchSettings(hitRadiusPx = with(density) { 24.dp.toPx() }.toDouble()) }
     val session = host.session
@@ -228,22 +228,21 @@ private fun EditorCanvas(host: EditorHost, revision: Int, modifier: Modifier) {
                 }
             },
     ) {
-        // Reading the revision inside the draw block makes every edit redraw the canvas.
-        check(host.revision >= 0)
         val vp = host.viewport
+        val document = host.document
+        val editorState = host.editorState
         drawIntoCanvas { c ->
-            SceneRenderer.draw(c.nativeCanvas, host.session.document, vp.scale.toFloat(), vp.offsetX.toFloat(), vp.offsetY.toFloat())
+            SceneRenderer.draw(c.nativeCanvas, document, vp.scale.toFloat(), vp.offsetX.toFloat(), vp.offsetY.toFloat())
         }
-        drawPointOverlay(host.session, vp)
+        drawPointOverlay(document, editorState, vp)
     }
 }
 
 /** Draws anchors and the handles of selected anchors. Visible size is independent of the touch target size. */
-private fun DrawScope.drawPointOverlay(session: EditorSession, vp: Viewport) {
-    val state = session.state
+private fun DrawScope.drawPointOverlay(document: Document, state: EditorState, vp: Viewport) {
     if (state.mode != EditMode.Points) return
     val layerId = state.selectedLayer ?: return
-    val layer = session.document.findLayer(layerId) as? ShapeLayer ?: return
+    val layer = document.findLayer(layerId) as? ShapeLayer ?: return
     val t = layer.shape.transform
 
     fun screen(p: Vec2): Offset {

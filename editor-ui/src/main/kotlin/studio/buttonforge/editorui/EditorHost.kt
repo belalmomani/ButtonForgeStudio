@@ -8,14 +8,26 @@ import androidx.compose.runtime.setValue
 import studio.buttonforge.document.Document
 import studio.buttonforge.editorcore.EditorSession
 import studio.buttonforge.editorcore.input.Viewport
+import studio.buttonforge.editorcore.points.EditorState
 
 /**
  * Holds the editing session for Compose. The session is a plain mutable object, so every change goes through
  * [edit] or [changed], which bump [revision] so screens that read it redraw.
  */
 @Stable
-class EditorHost(document: Document) {
-    var session: EditorSession by mutableStateOf(EditorSession(document))
+class EditorHost(initial: Document) {
+    var session: EditorSession by mutableStateOf(EditorSession(initial))
+        private set
+
+    // Copies of the session's state held as Compose state. Screens read these, so they update on their own and
+    // never depend on being re-invoked by a parent.
+    var document: Document by mutableStateOf(initial)
+        private set
+    var editorState: EditorState by mutableStateOf(EditorState())
+        private set
+    var undoCount: Int by mutableIntStateOf(0)
+        private set
+    var redoCount: Int by mutableIntStateOf(0)
         private set
     var viewport: Viewport by mutableStateOf(Viewport())
         private set
@@ -26,13 +38,14 @@ class EditorHost(document: Document) {
     private var viewHeight = 0
     private var fitted = false
 
+    /** Call after anything changed the session. */
     fun changed() {
-        revision++
+        publish()
     }
 
     fun <T> edit(block: (EditorSession) -> T): T {
         val result = block(session)
-        revision++
+        publish()
         return result
     }
 
@@ -40,6 +53,14 @@ class EditorHost(document: Document) {
         session = EditorSession(document)
         fitted = false
         fitIfNeeded(viewWidth, viewHeight)
+        publish()
+    }
+
+    private fun publish() {
+        document = session.document
+        editorState = session.state
+        undoCount = session.history.undoSize
+        redoCount = session.history.redoSize
         revision++
     }
 
