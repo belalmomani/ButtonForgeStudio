@@ -24,8 +24,12 @@ import studio.buttonforge.editorcore.points.PointTool
 import studio.buttonforge.geometry.hittest.HitTester
 import studio.buttonforge.geometry.math.Vec2
 import studio.buttonforge.geometry.ops.ArcLengthDistribution
+import studio.buttonforge.geometry.ops.CurveRefit
+import studio.buttonforge.geometry.ops.PathError
+import studio.buttonforge.geometry.ops.Resampling
 import studio.buttonforge.geometry.path.AnchorId
 import studio.buttonforge.geometry.path.CompoundPath
+import studio.buttonforge.geometry.path.Contour
 import studio.buttonforge.geometry.path.SegmentParam
 import studio.buttonforge.geometry.path.withInsertedAnchors
 
@@ -158,6 +162,63 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         val after = contour.copy(anchors = contour.anchors.filter { it.id != anchorId })
         execute(ReplaceContourCommand(layerId, ci, contour, after, document.counters, "Delete point"))
         return true
+    }
+
+    // ---------- approximate re-pointing: preview first, then apply ----------
+
+    /**
+     * Proposes re-pointing a contour to exactly [targetCount] anchors: equally spaced points on the outline joined by a
+     * smooth curve. This CHANGES the shape (corners are rounded); [ContourReplacement.maxError] says by how much.
+     * Nothing is modified until [applyReplacement].
+     */
+    fun previewRecount(layerId: LayerId, contourIndex: Int, targetCount: Int): ContourReplacement {
+        val contour = contourOf(layerId, contourIndex)
+        val minCount = if (contour.closed) 3 else 2
+        require(targetCount >= minCount) { "need at least $minCount anchors" }
+        val points = Resampling.sample(contour, targetCount)
+        require(points.isNotEmpty()) { "The contour has no length" }
+        val alloc = IdAllocator(document.counters)
+        val after = CurveRefit.interpolate(points, contour.closed, alloc::nextAnchorId)
+        return ContourReplacement(
+            layerId, contourIndex, contour, after, PathError.between(contour, after), document.counters, alloc.counters(),
+        )
+    }
+
+    /**
+     * Proposes replacing a contour by the fewest Bézier pieces that stay within [tolerance] of its outline. Points
+     * turning by more than [cornerAngleDegrees] stay sharp. Nothing is modified until [applyReplacement].
+     */
+    fun previewSimplify(layerId: LayerId, contourIndex: Int, tolerance: Double, cornerAngleDegrees: Double = 45.0): ContourReplacement {
+        val contour = contourOf(layerId, contourIndex)
+        var points = Resampling.flatten(contour, tolerance / 10.0)
+        if (contour.closed && points.size > 1) points = points.dropLast(1)
+        val alloc = IdAllocator(document.counters)
+        val result = CurveRefit.fit(points, contour.closed, tolerance, cornerAngleDegrees, alloc::nextAnchorId)
+        return ContourReplacement(
+            layerId, contourIndex, contour, result.contour, PathError.between(contour, result.contour),
+            document.counters, alloc.counters(),
+        )
+    }
+
+    /** Applies a preview as one undoable step. Fails if the document changed since the preview was made. */
+    fun applyReplacement(replacement: ContourReplacement) {
+        val current = (document.findLayer(replacement.layerId) as? ShapeLayer)
+            ?.shape?.geometry?.contours?.getOrNull(replacement.contourIndex)
+        check(current == replacement.before && document.counters == replacement.countersBefore) {
+            "The document changed since the preview was made"
+        }
+        execute(
+            ReplaceContourCommand(
+                replacement.layerId, replacement.contourIndex, replacement.before, replacement.after,
+                replacement.countersAfter, "Re-point contour",
+            ),
+        )
+    }
+
+    private fun contourOf(layerId: LayerId, contourIndex: Int): Contour {
+        val layer = document.findLayer(layerId) as? ShapeLayer ?: throw IllegalArgumentException("Not a shape layer")
+        return layer.shape.geometry.contours.getOrNull(contourIndex)
+            ?: throw IllegalArgumentException("No contour $contourIndex")
     }
 
     // ---------- appearance and layers ----------

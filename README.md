@@ -34,3 +34,7 @@ The debug APK is built by `.github/workflows/build-apk.yml` (artifact `ButtonFor
 ## Phase 1, step 6
 Adds `:integration-tests` (editor -> storage round trip, hand-written v1 fixture, opt-in perf baseline),
 `docs/boolean-ops-spike.md`, `docs/performance.md`, and the manual workflow `perf-baseline.yml`.
+
+## Phase 2, step 1
+Adds operations 3 and 4 to `:geometry` (`Resampling`, `CurveRefit` with corner detection, `PathError`) and
+`previewRecount` / `previewSimplify` / `applyReplacement` to `EditorSession`. JVM only; no UI changes yet.
