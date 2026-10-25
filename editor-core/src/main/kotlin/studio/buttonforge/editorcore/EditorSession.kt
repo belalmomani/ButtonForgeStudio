@@ -4,6 +4,8 @@ import studio.buttonforge.document.Document
 import studio.buttonforge.document.IdAllocator
 import studio.buttonforge.document.appearance.Appearance
 import studio.buttonforge.document.layers.LayerId
+import studio.buttonforge.document.layers.GroupLayer
+import studio.buttonforge.document.layers.LayerNode
 import studio.buttonforge.document.layers.ShapeLayer
 import studio.buttonforge.document.layers.addLayer
 import studio.buttonforge.document.shape.Shape
@@ -19,6 +21,7 @@ import studio.buttonforge.editorcore.history.CommandHistory
 import studio.buttonforge.editorcore.points.EditMode
 import studio.buttonforge.editorcore.points.EditorState
 import studio.buttonforge.editorcore.points.PointTool
+import studio.buttonforge.geometry.hittest.HitTester
 import studio.buttonforge.geometry.math.Vec2
 import studio.buttonforge.geometry.ops.ArcLengthDistribution
 import studio.buttonforge.geometry.path.AnchorId
@@ -201,6 +204,55 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         if (document.findLayer(id) !is ShapeLayer) return false
         state = state.copy(mode = EditMode.Points)
         return true
+    }
+
+    /**
+     * Enters Points mode on the selected shape; if none is selected, selects the topmost shape first.
+     * Returns false only when the document has no shape at all.
+     */
+    fun enterPointModeAuto(): Boolean {
+        val current = state.selectedLayer?.let { document.findLayer(it) }
+        if (current !is ShapeLayer) {
+            val top = lastShape(document.layers) ?: return false
+            selectLayer(top.id)
+        }
+        return enterPointMode()
+    }
+
+    /** Selects the topmost visible, unlocked shape under [world] (inside it or near its outline), or clears the selection. */
+    fun selectLayerAt(world: Vec2, worldTolerance: Double): LayerId? {
+        val hit = shapeAt(document.layers, world, worldTolerance)
+        selectLayer(hit?.id)
+        return hit?.id
+    }
+
+    private fun lastShape(nodes: List<LayerNode>): ShapeLayer? {
+        for (n in nodes.asReversed()) {
+            when (n) {
+                is ShapeLayer -> return n
+                is GroupLayer -> lastShape(n.children)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun shapeAt(nodes: List<LayerNode>, world: Vec2, worldTolerance: Double): ShapeLayer? {
+        for (n in nodes.asReversed()) {
+            if (!n.visible || n.locked) continue
+            when (n) {
+                is GroupLayer -> shapeAt(n.children, world, worldTolerance)?.let { return it }
+                is ShapeLayer -> {
+                    val t = n.shape.transform
+                    val local = t.toLocal(world) ?: continue
+                    val scale = (kotlin.math.abs(t.scale.x) + kotlin.math.abs(t.scale.y)) / 2.0
+                    val geometry = n.shape.geometry
+                    if (HitTester.contains(geometry, local) || HitTester.nearestSegment(geometry, local, worldTolerance / scale) != null) {
+                        return n
+                    }
+                }
+            }
+        }
+        return null
     }
 
     fun exitPointMode() {

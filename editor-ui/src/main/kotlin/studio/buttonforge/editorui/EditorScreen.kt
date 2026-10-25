@@ -100,7 +100,7 @@ private fun ControlPanel(host: EditorHost, revision: Int) {
     val session = host.session
     val state = session.state
     val selected = state.selectedLayer
-    val shapeSelected = selected != null && session.document.findLayer(selected) is ShapeLayer
+    val hasShape = flatten(session.document.layers).any { it is ShapeLayer }
     val anchorCount = if (selected == null) 0 else
         (session.document.findLayer(selected) as? ShapeLayer)?.shape?.geometry?.contours?.firstOrNull()?.anchors?.size ?: 0
 
@@ -127,7 +127,7 @@ private fun ControlPanel(host: EditorHost, revision: Int) {
         // mode and tools
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ToggleButton("الشكل", state.mode == EditMode.Shape) { host.edit { it.exitPointMode() } }
-            ToggleButton("النقاط", state.mode == EditMode.Points, enabled = shapeSelected) { host.edit { it.enterPointMode() } }
+            ToggleButton("النقاط", state.mode == EditMode.Points, enabled = hasShape) { host.edit { it.enterPointModeAuto() } }
             if (state.mode == EditMode.Points) {
                 ToggleButton("تحديد", state.pointTool == PointTool.Select) { host.edit { it.setPointTool(PointTool.Select) } }
                 ToggleButton("إضافة", state.pointTool == PointTool.AddPoint) { host.edit { it.setPointTool(PointTool.AddPoint) } }
@@ -177,8 +177,12 @@ private fun EditorCanvas(host: EditorHost, revision: Int, modifier: Modifier) {
             .pointerInput(controller) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    val downScreen = Vec2(down.position.x.toDouble(), down.position.y.toDouble())
+                    val downWorld = host.viewport.toWorld(downScreen)
+                    val pointsMode = host.session.state.mode == EditMode.Points
                     var multiTouch = false
-                    controller.handle(PointerEvent(PointerType.Down, Vec2(down.position.x.toDouble(), down.position.y.toDouble())))
+                    var moved = 0f
+                    controller.handle(PointerEvent(PointerType.Down, downScreen))
                     host.changed()
                     do {
                         val event = awaitPointerEvent()
@@ -198,20 +202,28 @@ private fun EditorCanvas(host: EditorHost, revision: Int, modifier: Modifier) {
                             event.changes.forEach { if (it.positionChanged()) it.consume() }
                         } else if (!multiTouch && pressed.size == 1) {
                             val change = pressed.first()
-                            if (host.session.state.mode == EditMode.Points) {
+                            if (pointsMode) {
                                 controller.handle(
                                     PointerEvent(PointerType.Move, Vec2(change.position.x.toDouble(), change.position.y.toDouble())),
                                 )
                             } else {
-                                // in Shape mode one finger pans the view
+                                // Shape mode: a small movement is a tap, a larger one pans the view
                                 val d = change.position - change.previousPosition
-                                host.transformViewport(1.0, 0.0, 0.0, d.x.toDouble(), d.y.toDouble())
+                                moved += d.getDistance()
+                                if (moved > viewConfiguration.touchSlop) {
+                                    host.transformViewport(1.0, 0.0, 0.0, d.x.toDouble(), d.y.toDouble())
+                                }
                             }
                             if (change.positionChanged()) change.consume()
                         }
                         host.changed()
                     } while (event.changes.any { it.pressed })
-                    if (!multiTouch) controller.handle(PointerEvent(PointerType.Up, Vec2.ZERO))
+                    if (!multiTouch) {
+                        controller.handle(PointerEvent(PointerType.Up, Vec2.ZERO))
+                        if (!pointsMode && moved <= viewConfiguration.touchSlop) {
+                            host.edit { it.selectLayerAt(downWorld, touch.worldTolerance(host.viewport.scale)) }
+                        }
+                    }
                     host.changed()
                 }
             },

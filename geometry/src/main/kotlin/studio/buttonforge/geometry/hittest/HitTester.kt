@@ -4,6 +4,7 @@ import studio.buttonforge.geometry.bezier.CubicBezier
 import studio.buttonforge.geometry.math.Vec2
 import studio.buttonforge.geometry.path.AnchorId
 import studio.buttonforge.geometry.path.CompoundPath
+import studio.buttonforge.geometry.path.FillRule
 import kotlin.math.max
 import kotlin.math.min
 
@@ -42,6 +43,41 @@ object HitTester {
             }
         }
         return best
+    }
+
+    private const val FLATTEN = 24
+
+    /**
+     * Whether [p] is inside the filled area, using the path's own fill rule. Curves are flattened into 24 straight
+     * pieces per segment, so points within a hair of the outline may be classified either way. Open contours are
+     * treated as closed, as a fill does.
+     */
+    fun contains(path: CompoundPath, p: Vec2): Boolean {
+        var winding = 0
+        var crossings = 0
+        for (contour in path.contours) {
+            if (contour.segmentCount == 0) continue
+            val points = ArrayList<Vec2>()
+            for (segment in contour.segments()) {
+                for (i in 0 until FLATTEN) points += segment.at(i.toDouble() / FLATTEN)
+            }
+            points += contour.segment(contour.segmentCount - 1).p3
+            for (i in points.indices) {
+                val a = points[i]
+                val b = points[(i + 1) % points.size]
+                val side = (b.x - a.x) * (p.y - a.y) - (p.x - a.x) * (b.y - a.y)
+                if (a.y <= p.y) {
+                    if (b.y > p.y && side > 0) winding++
+                } else {
+                    if (b.y <= p.y && side < 0) winding--
+                }
+                if ((a.y > p.y) != (b.y > p.y)) {
+                    val x = a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x)
+                    if (x > p.x) crossings++
+                }
+            }
+        }
+        return if (path.fillRule == FillRule.NonZero) winding != 0 else crossings % 2 == 1
     }
 
     private fun nearestOnCurve(c: CubicBezier, p: Vec2): Pair<Double, Double> {
