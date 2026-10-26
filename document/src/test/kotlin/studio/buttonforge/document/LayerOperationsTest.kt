@@ -6,6 +6,7 @@ import studio.buttonforge.document.layers.ShapeLayer
 import studio.buttonforge.document.layers.addLayer
 import studio.buttonforge.document.layers.findLayer
 import studio.buttonforge.document.layers.groupLayers
+import studio.buttonforge.document.layers.locateLayer
 import studio.buttonforge.document.layers.moveLayer
 import studio.buttonforge.document.layers.removeLayer
 import studio.buttonforge.document.layers.setLocked
@@ -109,5 +110,17 @@ class LayerOperationsTest {
         assertEquals(false, doc.findLayer(LayerId(2))!!.visible)
         assertTrue(doc.findLayer(LayerId(3))!!.locked)
         assertTrue(doc.findLayer(LayerId(1))!!.visible)
+    }
+
+    @Test
+    fun locateReportsParentIndexAndSiblingCount() {
+        val doc = SampleDocuments.empty()
+            .addLayer(layer(1))
+            .addLayer(GroupLayer(LayerId(10), "G"))
+            .addLayer(layer(2), parent = LayerId(10))
+            .addLayer(layer(3), parent = LayerId(10))
+        assertEquals(studio.buttonforge.document.layers.LayerLocation(null, 1, 2), doc.locateLayer(LayerId(10)))
+        assertEquals(studio.buttonforge.document.layers.LayerLocation(LayerId(10), 1, 2), doc.locateLayer(LayerId(3)))
+        assertNull(doc.locateLayer(LayerId(99)))
     }
 }

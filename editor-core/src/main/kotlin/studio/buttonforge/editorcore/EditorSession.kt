@@ -8,6 +8,11 @@ import studio.buttonforge.document.layers.GroupLayer
 import studio.buttonforge.document.layers.LayerNode
 import studio.buttonforge.document.layers.ShapeLayer
 import studio.buttonforge.document.layers.addLayer
+import studio.buttonforge.document.layers.locateLayer
+import studio.buttonforge.document.layers.moveLayer
+import studio.buttonforge.document.layers.removeLayer
+import studio.buttonforge.document.layers.setLocked
+import studio.buttonforge.document.layers.setVisible
 import studio.buttonforge.document.shape.Shape
 import studio.buttonforge.document.layers.findLayer
 import studio.buttonforge.document.shape.Transform
@@ -325,6 +330,86 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         updateLayers("Add shape") { it.addLayer(node).copy(counters = counters) }
         selectLayer(id)
         return id
+    }
+
+    // ---------- layer management: each action is one undo step ----------
+
+    /** Moves a layer within its group. [delta] > 0 moves it up the stack (towards the front). */
+    fun reorderLayer(id: LayerId, delta: Int): Boolean {
+        val loc = document.locateLayer(id) ?: return false
+        val target = (loc.index + delta).coerceIn(0, loc.siblingCount - 1)
+        if (target == loc.index) return false
+        updateLayers("Reorder layer") { it.moveLayer(id, loc.parent, target) }
+        return true
+    }
+
+    fun deleteLayer(id: LayerId): Boolean {
+        if (document.findLayer(id) == null) return false
+        updateLayers("Delete layer") { it.removeLayer(id) }
+        return true
+    }
+
+    fun setLayerVisible(id: LayerId, visible: Boolean): Boolean {
+        val node = document.findLayer(id) ?: return false
+        if (node.visible == visible) return false
+        updateLayers(if (visible) "Show layer" else "Hide layer") { it.setVisible(id, visible) }
+        return true
+    }
+
+    fun setLayerLocked(id: LayerId, locked: Boolean): Boolean {
+        val node = document.findLayer(id) ?: return false
+        if (node.locked == locked) return false
+        updateLayers(if (locked) "Lock layer" else "Unlock layer") { it.setLocked(id, locked) }
+        return true
+    }
+
+    /**
+     * Copies a layer (a whole group too) just above the original, shifted by 20 units, with new layer and anchor ids.
+     * Button-state overrides are not copied. Selects the copy.
+     */
+    fun duplicateLayer(id: LayerId): LayerId? {
+        val node = document.findLayer(id) ?: return null
+        val loc = document.locateLayer(id) ?: return null
+        val alloc = IdAllocator(document.counters)
+        val copy = cloneNode(node, alloc, root = true)
+        val counters = alloc.counters()
+        updateLayers("Duplicate layer") { it.addLayer(copy, loc.parent, loc.index + 1).copy(counters = counters) }
+        selectLayer(copy.id)
+        return copy.id
+    }
+
+    private fun cloneNode(node: LayerNode, alloc: IdAllocator, root: Boolean): LayerNode = when (node) {
+        is ShapeLayer -> {
+            val t = node.shape.transform
+            val geometry = node.shape.geometry.let { g ->
+                g.copy(contours = g.contours.map { c -> c.copy(anchors = c.anchors.map { it.copy(id = alloc.nextAnchorId()) }) })
+            }
+            node.copy(
+                id = alloc.nextLayerId(),
+                name = if (root) node.name + " نسخة" else node.name,
+                shape = node.shape.copy(
+                    geometry = geometry,
+                    transform = if (root) t.copy(translation = t.translation + Vec2(20.0, 20.0)) else t,
+                ),
+            )
+        }
+        is GroupLayer -> {
+            val newId = alloc.nextLayerId()
+            val children = node.children.map { cloneNode(it, alloc, root = false) }
+            val moved = if (root) shiftChildren(children) else children
+            node.copy(id = newId, name = if (root) node.name + " نسخة" else node.name, children = moved)
+        }
+    }
+
+    private fun shiftChildren(children: List<LayerNode>): List<LayerNode> = children.map { child ->
+        when (child) {
+            is ShapeLayer -> child.copy(
+                shape = child.shape.copy(
+                    transform = child.shape.transform.copy(translation = child.shape.transform.translation + Vec2(20.0, 20.0)),
+                ),
+            )
+            is GroupLayer -> child.copy(children = shiftChildren(child.children))
+        }
     }
 
     // ---------- selection and modes ----------

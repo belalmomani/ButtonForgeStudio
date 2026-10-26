@@ -61,7 +61,7 @@ import studio.buttonforge.document.appearance.Color as ModelColor
 import studio.buttonforge.document.appearance.Stroke as ModelStroke
 
 /** Shown on screen so it is clear which build is installed. */
-private const val BUILD_TAG = "7أ"
+private const val BUILD_TAG = "7ب"
 
 private val POINT_COUNTS = listOf(25, 50, 100, 250, 500)
 private val SIMPLIFY_TOLERANCES = listOf(0.5, 1.0, 2.0)
@@ -107,6 +107,7 @@ private fun ControlPanel(host: EditorHost) {
     val doc = host.document
     val state = host.editorState
     val selected = state.selectedLayer
+    val selectedNode = selected?.let { doc.findLayer(it) }
     val hasShape = flatten(doc.layers).any { it is ShapeLayer }
     val anchorCount = if (selected == null) 0 else
         (doc.findLayer(selected) as? ShapeLayer)?.shape?.geometry?.contours?.firstOrNull()?.anchors?.size ?: 0
@@ -118,7 +119,22 @@ private fun ControlPanel(host: EditorHost) {
         // layers
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for (node in flatten(doc.layers)) {
-                ToggleButton(node.name, node.id == selected) { host.edit { it.selectLayer(node.id) } }
+                val label = node.name + (if (!node.visible) " (مخفي)" else "") + (if (node.locked) " (مقفل)" else "")
+                ToggleButton(label, node.id == selected) { host.edit { it.selectLayer(node.id) } }
+            }
+        }
+        if (selected != null && selectedNode != null) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = { host.edit { it.reorderLayer(selected, 1) } }) { Text("للأمام") }
+                OutlinedButton(onClick = { host.edit { it.reorderLayer(selected, -1) } }) { Text("للخلف") }
+                OutlinedButton(onClick = { host.edit { it.duplicateLayer(selected) } }) { Text("تكرار") }
+                OutlinedButton(onClick = { host.edit { it.setLayerVisible(selected, !selectedNode.visible) } }) {
+                    Text(if (selectedNode.visible) "إخفاء" else "إظهار")
+                }
+                OutlinedButton(onClick = { host.edit { it.setLayerLocked(selected, !selectedNode.locked) } }) {
+                    Text(if (selectedNode.locked) "فتح القفل" else "قفل")
+                }
+                OutlinedButton(onClick = { host.edit { it.deleteLayer(selected) } }) { Text("حذف") }
             }
         }
         // add shapes

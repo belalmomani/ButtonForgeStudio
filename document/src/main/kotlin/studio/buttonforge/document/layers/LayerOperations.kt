@@ -18,6 +18,16 @@ fun List<LayerNode>.findLayer(id: LayerId): LayerNode? {
 
 fun Document.findLayer(id: LayerId): LayerNode? = layers.findLayer(id)
 
+/** Where a layer sits: its parent group (null at the top level), its index among siblings, and how many siblings. */
+data class LayerLocation(val parent: LayerId?, val index: Int, val siblingCount: Int)
+
+fun Document.locateLayer(id: LayerId): LayerLocation? {
+    val loc = locate(layers, id, null) ?: return null
+    val parent = loc.parent
+    val count = if (parent == null) layers.size else (findLayer(parent) as GroupLayer).children.size
+    return LayerLocation(parent, loc.index, count)
+}
+
 private fun locate(list: List<LayerNode>, id: LayerId, parent: LayerId?): Location? {
     for ((i, n) in list.withIndex()) {
         if (n.id == id) return Location(parent, i)

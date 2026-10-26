@@ -42,3 +42,7 @@ Adds operations 3 and 4 to `:geometry` (`Resampling`, `CurveRefit` with corner d
 ## Phase 2, step 2
 Handle dragging (the other handle follows Sharp / Smooth / Symmetric), corner-type buttons, and a preview-then-apply
 panel for approximate re-pointing and simplifying. Build tag on screen: "7أ".
+
+## Phase 2, step 3
+Layer management: bring forward / send back, duplicate (groups too, with fresh ids), show/hide, lock, delete — each one
+undo step. `Document.locateLayer` added. Build tag "7ب".
