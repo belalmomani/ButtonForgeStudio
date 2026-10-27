@@ -25,6 +25,8 @@ object CurveRefit {
     /**
      * Fits cubic Béziers through [points] so that every point is within [tolerance] of the result. Points whose
      * direction changes by more than [cornerAngleDegrees] become Sharp anchors; all others are Smooth.
+     * With [cornerWindow] > 1 a corner is judged over that many points on each side (and only the sharpest point of
+     * a cluster is kept), which stops hand-drawn jitter from creating false corners.
      * If the first attempt misses the tolerance the fitter retries with a tighter internal tolerance, up to 8 times;
      * [RefitResult.withinTolerance] says whether it succeeded.
      */
@@ -34,8 +36,10 @@ object CurveRefit {
         tolerance: Double,
         cornerAngleDegrees: Double = 45.0,
         nextId: () -> AnchorId,
+        cornerWindow: Int = 1,
     ): RefitResult {
         require(tolerance > 0.0 && tolerance.isFinite()) { "tolerance must be positive" }
+        require(cornerWindow >= 1) { "cornerWindow must be at least 1" }
         val pts = removeDuplicates(points, closed)
         require(pts.size >= 2) { "need at least 2 distinct points" }
         require(!closed || pts.size >= 3) { "a closed contour needs at least 3 distinct points" }
@@ -43,7 +47,7 @@ object CurveRefit {
         var internal = tolerance
         var best: Pair<Fitted, Double>? = null
         repeat(MAX_TOLERANCE_HALVINGS) {
-            val fitted = fitAll(pts, closed, internal, cornerAngleDegrees)
+            val fitted = fitAll(pts, closed, internal, cornerAngleDegrees, cornerWindow)
             val error = measure(pts, fitted.curves)
             val current = best
             if (current == null || error < current.second) best = fitted to error
@@ -90,9 +94,9 @@ object CurveRefit {
         return out
     }
 
-    private fun fitAll(pts: List<Vec2>, closed: Boolean, tolerance: Double, cornerDeg: Double): Fitted {
+    private fun fitAll(pts: List<Vec2>, closed: Boolean, tolerance: Double, cornerDeg: Double, window: Int): Fitted {
         val n = pts.size
-        val corners = findCorners(pts, closed, cornerDeg)
+        val corners = findCorners(pts, closed, cornerDeg, window)
         val curves = ArrayList<CubicBezier>()
         val startsWithCorner = ArrayList<Boolean>()
 
@@ -127,16 +131,37 @@ object CurveRefit {
         return Fitted(curves, startsWithCorner)
     }
 
-    private fun findCorners(pts: List<Vec2>, closed: Boolean, cornerDeg: Double): List<Int> {
+    private fun findCorners(pts: List<Vec2>, closed: Boolean, cornerDeg: Double, window: Int): List<Int> {
         val threshold = Math.toRadians(cornerDeg)
         val n = pts.size
-        val range = if (closed) 0 until n else 1 until n - 1
+        // turning angle at each point, measured over `window` points on each side (fewer near the ends of an open path)
+        val angles = DoubleArray(n) { i ->
+            val w = if (closed) minOf(window, n / 2).coerceAtLeast(1) else minOf(window, i, n - 1 - i)
+            if (w < 1) {
+                0.0
+            } else {
+                val a = unit(pts[i] - pts[(i - w + n) % n])
+                val b = unit(pts[(i + w) % n] - pts[i])
+                acos(dot(a, b).coerceIn(-1.0, 1.0))
+            }
+        }
+        val reach = window - 1
         val result = ArrayList<Int>()
-        for (i in range) {
-            val a = unit(pts[i] - pts[(i - 1 + n) % n])
-            val b = unit(pts[(i + 1) % n] - pts[i])
-            val angle = acos(dot(a, b).coerceIn(-1.0, 1.0))
-            if (angle > threshold) result += i
+        for (i in 0 until n) {
+            if (angles[i] <= threshold) continue
+            if (!closed && (i == 0 || i == n - 1)) continue
+            var isPeak = true
+            if (reach > 0) {
+                // keep only the sharpest point of a cluster (the earliest one when angles tie)
+                for (d in 1..reach) {
+                    val before = i - d
+                    val after = i + d
+                    val b = if (closed) angles[(before + n) % n] else if (before >= 0) angles[before] else 0.0
+                    val a = if (closed) angles[after % n] else if (after < n) angles[after] else 0.0
+                    if (b >= angles[i] || a > angles[i]) isPeak = false
+                }
+            }
+            if (isPeak) result += i
         }
         return result
     }

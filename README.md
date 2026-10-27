@@ -46,3 +46,8 @@ panel for approximate re-pointing and simplifying. Build tag on screen: "7أ".
 ## Phase 2, step 3
 Layer management: bring forward / send back, duplicate (groups too, with fresh ids), show/hide, lock, delete — each one
 undo step. `Document.locateLayer` added. Build tag "7ب".
+
+## Phase 2, step 4
+Freehand drawing (smoothed, re-spaced and fitted into editable Béziers; shaky input does not create false corners)
+and the pen tool (tap = corner, drag = smooth point with handle, tap the first point to close). Windowed corner
+detection in `CurveRefit`. Build tag "8أ".

@@ -8,6 +8,12 @@ import androidx.compose.runtime.setValue
 import studio.buttonforge.document.Document
 import studio.buttonforge.editorcore.ContourReplacement
 import studio.buttonforge.editorcore.EditorSession
+import studio.buttonforge.editorcore.draw.DrawTool
+import studio.buttonforge.editorcore.draw.FreehandController
+import studio.buttonforge.editorcore.draw.PenController
+import studio.buttonforge.editorcore.draw.PenPoint
+import studio.buttonforge.editorcore.input.ViewportTransform
+import studio.buttonforge.geometry.math.Vec2
 import studio.buttonforge.editorcore.input.Viewport
 import studio.buttonforge.editorcore.points.EditMode
 import studio.buttonforge.editorcore.points.EditorState
@@ -36,6 +42,23 @@ class EditorHost(initial: Document) {
     var revision: Int by mutableIntStateOf(0)
         private set
 
+    // The view as a transform for the controllers. They read the current viewport on every event.
+    private val liveViewport = object : ViewportTransform {
+        override val scale: Double get() = viewport.scale
+        override fun toWorld(screen: Vec2): Vec2 = viewport.toWorld(screen)
+    }
+
+    var freehand: FreehandController = FreehandController(session, liveViewport)
+        private set
+    var pen: PenController = PenController(session, liveViewport)
+        private set
+
+    /** Strokes being drawn, for the live preview. */
+    var freehandPreview: List<Vec2> by mutableStateOf(emptyList())
+        private set
+    var penPreview: List<PenPoint> by mutableStateOf(emptyList())
+        private set
+
     /** A proposed re-pointing waiting for the user to accept or cancel it. */
     var pending: ContourReplacement? by mutableStateOf(null)
         private set
@@ -61,6 +84,8 @@ class EditorHost(initial: Document) {
 
     fun replaceDocument(document: Document) {
         session = EditorSession(document)
+        freehand = FreehandController(session, liveViewport)
+        pen = PenController(session, liveViewport)
         fitted = false
         fitIfNeeded(viewWidth, viewHeight)
         publish()
@@ -88,6 +113,16 @@ class EditorHost(initial: Document) {
         }
     }
 
+    fun finishPen() {
+        pen.finishOpen()
+        publish()
+    }
+
+    fun cancelPen() {
+        pen.cancel()
+        publish()
+    }
+
     fun cancelPending() {
         pending = null
     }
@@ -101,6 +136,10 @@ class EditorHost(initial: Document) {
         editorState = session.state
         undoCount = session.history.undoSize
         redoCount = session.history.redoSize
+        if (session.state.drawTool != DrawTool.Pen && pen.preview.isNotEmpty()) pen.cancel()
+        if (session.state.drawTool != DrawTool.Freehand && freehand.preview.isNotEmpty()) freehand.cancel()
+        freehandPreview = freehand.preview.toList()
+        penPreview = pen.preview.toList()
         val p = pending
         if (p != null && (!session.isCurrent(p) || session.state.mode != EditMode.Points)) pending = null
         revision++

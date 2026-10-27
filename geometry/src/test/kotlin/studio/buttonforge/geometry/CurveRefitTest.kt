@@ -122,4 +122,19 @@ class CurveRefitTest {
             CurveRefit.interpolate(listOf(Vec2.ZERO, Vec2(1.0, 0.0)), true, ids::nextId)
         }
     }
+
+    @Test
+    fun aWiderCornerWindowIgnoresJitterButStillFindsTheRealCorner() {
+        val rnd = kotlin.random.Random(11)
+        fun jitter() = rnd.nextDouble(-0.2, 0.2)
+        val corner = Vec2(100.0, 0.0)
+        val points = List(101) { Vec2(it * 1.0 + jitter(), jitter()) } +
+            List(100) { Vec2(corner.x + jitter(), (it + 1) * 1.0 + jitter()) }
+        val result = CurveRefit.fit(points, closed = false, tolerance = 1.0, nextId = IdSource()::nextId, cornerWindow = 5)
+        val inner = result.contour.anchors.drop(1).dropLast(1)
+        val sharp = inner.filter { it.corner == CornerType.Sharp }
+        assertEquals(1, sharp.size, "anchors=${result.contour.anchors.map { it.position }}")
+        assertTrue(sharp.single().position.distanceTo(corner) < 6.0)
+        assertTrue(result.withinTolerance)
+    }
 }

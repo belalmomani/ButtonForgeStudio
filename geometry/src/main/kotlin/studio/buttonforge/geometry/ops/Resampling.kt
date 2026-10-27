@@ -2,6 +2,7 @@ package studio.buttonforge.geometry.ops
 
 import studio.buttonforge.geometry.bezier.CubicBezier
 import studio.buttonforge.geometry.math.Vec2
+import studio.buttonforge.geometry.math.lerp
 import studio.buttonforge.geometry.path.Contour
 
 /**
@@ -27,6 +28,54 @@ object Resampling {
             if (i == 0) out += segment.p0
             flattenSegment(segment, tolerance, out, 0)
         }
+        return out
+    }
+
+    /** Moving average over 2 * [radius] + 1 neighbours; the first and last points stay where they are. */
+    fun smoothPolyline(points: List<Vec2>, radius: Int): List<Vec2> {
+        require(radius >= 0) { "radius must not be negative" }
+        if (points.size < 3 || radius == 0) return points
+        return points.indices.map { i ->
+            if (i == 0 || i == points.lastIndex) {
+                points[i]
+            } else {
+                val from = maxOf(0, i - radius)
+                val to = minOf(points.lastIndex, i + radius)
+                var x = 0.0
+                var y = 0.0
+                for (j in from..to) {
+                    x += points[j].x
+                    y += points[j].y
+                }
+                val n = (to - from + 1).toDouble()
+                Vec2(x / n, y / n)
+            }
+        }
+    }
+
+    /** Points along a polyline every [spacing] units (by length), always including the first and the last point. */
+    fun resamplePolyline(points: List<Vec2>, spacing: Double): List<Vec2> {
+        require(spacing > 0.0 && spacing.isFinite()) { "spacing must be positive" }
+        if (points.size < 2) return points
+        val out = arrayListOf(points[0])
+        var carried = 0.0
+        var previous = points[0]
+        for (i in 1 until points.size) {
+            var a = previous
+            val b = points[i]
+            var length = a.distanceTo(b)
+            while (length > 0.0 && carried + length >= spacing) {
+                val need = spacing - carried
+                val p = lerp(a, b, need / length)
+                out += p
+                a = p
+                length = a.distanceTo(b)
+                carried = 0.0
+            }
+            carried += length
+            previous = b
+        }
+        if (out.last().distanceTo(points.last()) > 1e-9) out += points.last()
         return out
     }
 

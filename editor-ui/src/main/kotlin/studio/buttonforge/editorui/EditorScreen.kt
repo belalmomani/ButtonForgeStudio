@@ -46,6 +46,8 @@ import studio.buttonforge.document.layers.findLayer
 import studio.buttonforge.document.Document
 import studio.buttonforge.editorcore.points.EditorState
 import studio.buttonforge.editorcore.PointModeController
+import studio.buttonforge.editorcore.draw.DrawTool
+import studio.buttonforge.editorcore.draw.PenPoint
 import studio.buttonforge.editorcore.input.PointerEvent
 import studio.buttonforge.editorcore.input.PointerType
 import studio.buttonforge.editorcore.input.Viewport
@@ -61,7 +63,7 @@ import studio.buttonforge.document.appearance.Color as ModelColor
 import studio.buttonforge.document.appearance.Stroke as ModelStroke
 
 /** Shown on screen so it is clear which build is installed. */
-private const val BUILD_TAG = "7ب"
+private const val BUILD_TAG = "8أ"
 
 private val POINT_COUNTS = listOf(25, 50, 100, 250, 500)
 private val SIMPLIFY_TOLERANCES = listOf(0.5, 1.0, 2.0)
@@ -152,13 +154,30 @@ private fun ControlPanel(host: EditorHost) {
         }
         // mode and tools
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ToggleButton("الشكل", state.mode == EditMode.Shape) { host.edit { it.exitPointMode() } }
+            ToggleButton("الشكل", state.mode == EditMode.Shape && state.drawTool == DrawTool.None) { host.edit { it.exitPointMode() } }
+            ToggleButton("رسم حر", state.drawTool == DrawTool.Freehand) {
+                host.edit { it.setDrawTool(if (state.drawTool == DrawTool.Freehand) DrawTool.None else DrawTool.Freehand) }
+            }
+            ToggleButton("قلم", state.drawTool == DrawTool.Pen) {
+                host.edit { it.setDrawTool(if (state.drawTool == DrawTool.Pen) DrawTool.None else DrawTool.Pen) }
+            }
             ToggleButton("النقاط", state.mode == EditMode.Points, enabled = hasShape) { host.edit { it.enterPointModeAuto() } }
             if (state.mode == EditMode.Points) {
                 ToggleButton("تحديد", state.pointTool == PointTool.Select) { host.edit { it.setPointTool(PointTool.Select) } }
                 ToggleButton("إضافة", state.pointTool == PointTool.AddPoint) { host.edit { it.setPointTool(PointTool.AddPoint) } }
                 ToggleButton("حذف", state.pointTool == PointTool.DeletePoint) { host.edit { it.setPointTool(PointTool.DeletePoint) } }
             }
+        }
+        if (state.drawTool == DrawTool.Freehand) {
+            Text("ارسم بإصبعك: الخط يتحول إلى مسار قابل للتعديل. أغلق الشكل بإنهاء الرسم قرب بدايته.")
+        }
+        if (state.drawTool == DrawTool.Pen) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("القلم: المس لنقطة حادة، اسحب لنقطة ناعمة.", Modifier.padding(top = 10.dp))
+                if (host.penPreview.size >= 2) Button(onClick = { host.finishPen() }) { Text("إنهاء المسار") }
+                if (host.penPreview.isNotEmpty()) OutlinedButton(onClick = { host.cancelPen() }) { Text("إلغاء") }
+            }
+            if (host.penPreview.size >= 3) Text("المس النقطة الأولى لإغلاق الشكل.")
         }
         if (state.mode == EditMode.Points && selected != null) {
             val ids = state.selectedAnchors
@@ -236,10 +255,18 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val downScreen = Vec2(down.position.x.toDouble(), down.position.y.toDouble())
                     val downWorld = host.viewport.toWorld(downScreen)
+                    val drawTool = host.session.state.drawTool
                     val pointsMode = host.session.state.mode == EditMode.Points
+                    // Drawing tools and point editing receive the finger; otherwise it selects or pans.
+                    val target: (PointerEvent) -> Unit = when (drawTool) {
+                        DrawTool.Freehand -> host.freehand::handle
+                        DrawTool.Pen -> host.pen::handle
+                        DrawTool.None -> controller::handle
+                    }
+                    val editing = pointsMode || drawTool != DrawTool.None
                     var multiTouch = false
                     var moved = 0f
-                    controller.handle(PointerEvent(PointerType.Down, downScreen))
+                    target(PointerEvent(PointerType.Down, downScreen))
                     host.changed()
                     do {
                         val event = awaitPointerEvent()
@@ -247,7 +274,7 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
                         if (pressed.size >= 2) {
                             if (!multiTouch) {
                                 multiTouch = true
-                                controller.handle(PointerEvent(PointerType.Cancel, Vec2.ZERO))
+                                target(PointerEvent(PointerType.Cancel, Vec2.ZERO))
                             }
                             val zoom = event.calculateZoom()
                             val pan = event.calculatePan()
@@ -259,10 +286,8 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
                             event.changes.forEach { if (it.positionChanged()) it.consume() }
                         } else if (!multiTouch && pressed.size == 1) {
                             val change = pressed.first()
-                            if (pointsMode) {
-                                controller.handle(
-                                    PointerEvent(PointerType.Move, Vec2(change.position.x.toDouble(), change.position.y.toDouble())),
-                                )
+                            if (editing) {
+                                target(PointerEvent(PointerType.Move, Vec2(change.position.x.toDouble(), change.position.y.toDouble())))
                             } else {
                                 // Shape mode: a small movement is a tap, a larger one pans the view
                                 val d = change.position - change.previousPosition
@@ -276,8 +301,8 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
                         host.changed()
                     } while (event.changes.any { it.pressed })
                     if (!multiTouch) {
-                        controller.handle(PointerEvent(PointerType.Up, Vec2.ZERO))
-                        if (!pointsMode && moved <= viewConfiguration.touchSlop) {
+                        target(PointerEvent(PointerType.Up, Vec2.ZERO))
+                        if (!editing && moved <= viewConfiguration.touchSlop) {
                             host.edit { it.selectLayerAt(downWorld, touch.worldTolerance(host.viewport.scale)) }
                         }
                     }
@@ -292,6 +317,7 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
             SceneRenderer.draw(c.nativeCanvas, document, vp.scale.toFloat(), vp.offsetX.toFloat(), vp.offsetY.toFloat())
         }
         drawPointOverlay(document, editorState, vp, host.pending)
+        drawStrokePreviews(host.freehandPreview, host.penPreview, vp)
     }
 }
 
@@ -344,6 +370,54 @@ private fun DrawScope.drawPointOverlay(document: Document, state: EditorState, v
                 drawCircle(Color.White, radius, at)
                 drawCircle(Color(0xFF1565C0), radius, at, style = line)
             }
+        }
+    }
+}
+
+/** Live previews of the stroke being drawn: the freehand line, and the pen path with its points and handles. */
+private fun DrawScope.drawStrokePreviews(freehand: List<Vec2>, pen: List<PenPoint>, vp: Viewport) {
+    fun screen(p: Vec2): Offset {
+        val s = vp.toScreen(p)
+        return Offset(s.x.toFloat(), s.y.toFloat())
+    }
+    val color = Color(0xFF00897B)
+    if (freehand.size >= 2) {
+        val path = Path()
+        val first = screen(freehand[0])
+        path.moveTo(first.x, first.y)
+        for (i in 1 until freehand.size) {
+            val o = screen(freehand[i])
+            path.lineTo(o.x, o.y)
+        }
+        drawPath(path, color, style = Stroke(width = 3.dp.toPx()))
+    }
+    if (pen.isNotEmpty()) {
+        if (pen.size >= 2) {
+            val path = Path()
+            val first = screen(pen[0].position)
+            path.moveTo(first.x, first.y)
+            for (i in 0 until pen.size - 1) {
+                val a = pen[i]
+                val b = pen[i + 1]
+                val c1 = screen(a.position + a.handleOut)
+                val c2 = screen(b.position - b.handleOut)
+                val e = screen(b.position)
+                path.cubicTo(c1.x, c1.y, c2.x, c2.y, e.x, e.y)
+            }
+            drawPath(path, color, style = Stroke(width = 2.dp.toPx()))
+        }
+        val radius = 5.dp.toPx()
+        for (p in pen) {
+            val at = screen(p.position)
+            if (p.handleOut != Vec2.ZERO) {
+                for (h in listOf(p.position + p.handleOut, p.position - p.handleOut)) {
+                    val o = screen(h)
+                    drawLine(color, at, o, strokeWidth = 1.5.dp.toPx())
+                    drawCircle(color, radius * 0.7f, o)
+                }
+            }
+            drawCircle(Color.White, radius, at)
+            drawCircle(color, radius, at, style = Stroke(width = 2.dp.toPx()))
         }
     }
 }

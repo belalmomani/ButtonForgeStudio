@@ -64,4 +64,28 @@ class ResamplingTest {
     fun badToleranceIsRejected() {
         assertFailsWith<IllegalArgumentException> { Resampling.flatten(TestShapes.square(), 0.0) }
     }
+
+    @Test
+    fun polylineResamplingKeepsTheEndsAndTheSpacing() {
+        val line = listOf(Vec2(0.0, 0.0), Vec2(30.0, 0.0), Vec2(100.0, 0.0))
+        val pts = Resampling.resamplePolyline(line, 25.0)
+        assertEquals(Vec2(0.0, 0.0), pts.first())
+        assertEquals(Vec2(100.0, 0.0), pts.last())
+        assertTrue(pts.size in 5..6, "size=${pts.size}")
+        for (g in pts.zipWithNext { a, b -> a.distanceTo(b) }) assertTrue(g <= 25.0 + 1e-9, "gap=$g")
+        assertEquals(2, Resampling.resamplePolyline(listOf(Vec2.ZERO, Vec2(5.0, 0.0)), 25.0).size)
+        assertEquals(1, Resampling.resamplePolyline(listOf(Vec2.ZERO), 25.0).size)
+        assertFailsWith<IllegalArgumentException> { Resampling.resamplePolyline(line, 0.0) }
+    }
+
+    @Test
+    fun smoothingCalmsJitterButKeepsTheEnds() {
+        val zigzag = List(21) { Vec2(it * 5.0, if (it % 2 == 0) 1.0 else -1.0) }
+        val smooth = Resampling.smoothPolyline(zigzag, 2)
+        assertEquals(zigzag.first(), smooth.first())
+        assertEquals(zigzag.last(), smooth.last())
+        assertTrue(smooth.subList(3, 18).all { abs(it.y) < 0.5 })
+        val straight = List(10) { Vec2(it * 3.0, 7.0) }
+        assertEquals(straight, Resampling.smoothPolyline(straight, 3).map { Vec2(Math.round(it.x * 1e9) / 1e9, it.y) })
+    }
 }

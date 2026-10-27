@@ -3,6 +3,12 @@ package studio.buttonforge.editorcore
 import studio.buttonforge.document.Document
 import studio.buttonforge.document.IdAllocator
 import studio.buttonforge.document.appearance.Appearance
+import studio.buttonforge.document.appearance.Color
+import studio.buttonforge.document.appearance.Fill
+import studio.buttonforge.document.appearance.Paint
+import studio.buttonforge.document.appearance.Stroke
+import studio.buttonforge.document.appearance.StrokeCap
+import studio.buttonforge.document.appearance.StrokeJoin
 import studio.buttonforge.document.layers.LayerId
 import studio.buttonforge.document.layers.GroupLayer
 import studio.buttonforge.document.layers.LayerNode
@@ -23,6 +29,8 @@ import studio.buttonforge.editorcore.commands.ReplaceContourCommand
 import studio.buttonforge.editorcore.commands.SetAnchorCommand
 import studio.buttonforge.editorcore.commands.SetAppearanceCommand
 import studio.buttonforge.editorcore.commands.SetLayersCommand
+import studio.buttonforge.editorcore.draw.DrawTool
+import studio.buttonforge.editorcore.draw.PenPoint
 import studio.buttonforge.editorcore.history.Command
 import studio.buttonforge.editorcore.history.CommandHistory
 import studio.buttonforge.editorcore.points.EditMode
@@ -412,20 +420,70 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         }
     }
 
+    // ---------- drawing new paths ----------
+
+    /** Picks a drawing tool (or None). Drawing and point editing are separate modes, so this leaves Points mode. */
+    fun setDrawTool(tool: DrawTool) {
+        state = state.copy(drawTool = tool, mode = EditMode.Shape, selectedAnchors = emptySet())
+    }
+
+    /**
+     * Turns a finger stroke (world coordinates) into a new editable path: the points are fitted with Bézier curves
+     * within [tolerance]; sharp turns stay sharp. Returns null if the stroke is too short to make a path.
+     */
+    fun addDrawnPath(points: List<Vec2>, closed: Boolean, tolerance: Double): LayerId? =
+        try {
+            addShapeLayer(if (closed) "رسم مغلق" else "رسم حر", drawnLook(closed)) { next ->
+                CompoundPath(listOf(CurveRefit.fit(points, closed, tolerance, 45.0, next, cornerWindow = 2).contour))
+            }
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+
+    /**
+     * Builds a path from pen clicks. A point with a drag handle becomes a Symmetric anchor, a plain tap a Sharp one.
+     * Needs 2 points (open) or 3 (closed); returns null otherwise.
+     */
+    fun addPenPath(points: List<PenPoint>, closed: Boolean): LayerId? {
+        if (points.size < (if (closed) 3 else 2)) return null
+        return addShapeLayer(if (closed) "شكل بالقلم" else "مسار بالقلم", drawnLook(closed)) { next ->
+            val n = points.size
+            val anchors = points.mapIndexed { i, p ->
+                val smooth = p.handleOut != Vec2.ZERO
+                val hasIn = closed || i > 0
+                val hasOut = closed || i < n - 1
+                Anchor(
+                    next(), p.position,
+                    if (smooth && hasIn) p.handleOut * -1.0 else Vec2.ZERO,
+                    if (smooth && hasOut) p.handleOut else Vec2.ZERO,
+                    if (smooth) CornerType.Symmetric else CornerType.Sharp,
+                )
+            }
+            CompoundPath(listOf(Contour(anchors, closed)))
+        }
+    }
+
+    private fun drawnLook(closed: Boolean) = Appearance(
+        fills = if (closed) listOf(Fill(Paint.Solid(Color(0xFF3366FF.toInt())))) else emptyList(),
+        strokes = listOf(
+            Stroke(Paint.Solid(Color(0xFF1B2A6B.toInt())), width = 4.0, cap = StrokeCap.Round, join = StrokeJoin.Round),
+        ),
+    )
+
     // ---------- selection and modes ----------
 
     fun selectLayer(id: LayerId?) {
         state = if (id == null || document.findLayer(id) == null) {
-            EditorState(pointTool = state.pointTool)
+            EditorState(pointTool = state.pointTool, drawTool = state.drawTool)
         } else {
-            EditorState(selectedLayer = id, pointTool = state.pointTool)
+            EditorState(selectedLayer = id, pointTool = state.pointTool, drawTool = state.drawTool)
         }
     }
 
     fun enterPointMode(): Boolean {
         val id = state.selectedLayer ?: return false
         if (document.findLayer(id) !is ShapeLayer) return false
-        state = state.copy(mode = EditMode.Points)
+        state = state.copy(mode = EditMode.Points, drawTool = DrawTool.None)
         return true
     }
 
@@ -479,7 +537,7 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
     }
 
     fun exitPointMode() {
-        state = state.copy(mode = EditMode.Shape, selectedAnchors = emptySet())
+        state = state.copy(mode = EditMode.Shape, selectedAnchors = emptySet(), drawTool = DrawTool.None)
     }
 
     /** Tapping empty space: in Shape mode it deselects the shape, in Points mode only the points. */
@@ -504,7 +562,7 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         val id = state.selectedLayer ?: return
         val node = document.findLayer(id)
         if (node == null) {
-            state = EditorState(pointTool = state.pointTool)
+            state = EditorState(pointTool = state.pointTool, drawTool = state.drawTool)
             return
         }
         if (node !is ShapeLayer) {

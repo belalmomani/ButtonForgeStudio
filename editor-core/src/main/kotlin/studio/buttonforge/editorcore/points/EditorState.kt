@@ -1,6 +1,7 @@
 package studio.buttonforge.editorcore.points
 
 import studio.buttonforge.document.layers.LayerId
+import studio.buttonforge.editorcore.draw.DrawTool
 import studio.buttonforge.geometry.path.AnchorId
 
 /** Shape mode selects whole shapes. Points mode edits the anchors of the selected shape. */
@@ -13,6 +14,7 @@ data class EditorState(
     val mode: EditMode = EditMode.Shape,
     val selectedAnchors: Set<AnchorId> = emptySet(),
     val pointTool: PointTool = PointTool.Select,
+    val drawTool: DrawTool = DrawTool.None,
 )
 
 /**
