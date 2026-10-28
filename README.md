@@ -59,3 +59,9 @@ Compound shapes (combine with the shape below to make holes; split back into lay
 ## Phase 2, step 6
 Selection rectangle (drag from empty space in Points mode), select all / invert, and nudge arrows whose repeated
 taps merge into one undo step. Build tag "9أ".
+
+## Phase 2, step 7: boolean operations
+`:geometry-android` implements `BooleanOps` with `Path.op`, rebuilding editable anchors from the result (sampling along
+the contours, then `CurveRefit`). The editor shows Union / Subtract / Intersect / Exclude "with the shape below".
+The top bar has a self-check button ("اختبار البولينية") that runs 8 cases x 4 operations on the device and reports
+success, point counts, agreement with the expected inside/outside, and time. Build tag "10أ".

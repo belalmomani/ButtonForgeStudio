@@ -19,5 +19,5 @@ dependencyResolutionManagement {
 // Phase 1, steps 1-6. designsystem is not created: it would hold nothing but a theme wrapper (theme lives in :app).
 include(
     ":geometry", ":document", ":project-storage", ":editor-core",
-    ":renderer", ":editor-ui", ":app", ":integration-tests",
+    ":renderer", ":editor-ui", ":geometry-android", ":app", ":integration-tests",
 )

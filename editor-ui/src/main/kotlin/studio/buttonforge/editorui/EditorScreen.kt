@@ -11,6 +11,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -57,6 +58,7 @@ import studio.buttonforge.editorcore.points.PointTool
 import studio.buttonforge.editorcore.points.TouchSettings
 import studio.buttonforge.editorcore.ContourReplacement
 import studio.buttonforge.geometry.math.Vec2
+import studio.buttonforge.geometry.ops.BooleanOp
 import studio.buttonforge.geometry.path.CornerType
 import studio.buttonforge.geometry.primitives.Primitives
 import studio.buttonforge.renderer.SceneRenderer
@@ -64,7 +66,7 @@ import studio.buttonforge.document.appearance.Color as ModelColor
 import studio.buttonforge.document.appearance.Stroke as ModelStroke
 
 /** Shown on screen so it is clear which build is installed. */
-private const val BUILD_TAG = "9أ"
+private const val BUILD_TAG = "10أ"
 
 private val POINT_COUNTS = listOf(25, 50, 100, 250, 500)
 private val SIMPLIFY_TOLERANCES = listOf(0.5, 1.0, 2.0)
@@ -77,6 +79,7 @@ fun EditorScreen(
     onNew: () -> Unit,
     message: String?,
     modifier: Modifier = Modifier,
+    extraActions: @Composable RowScope.() -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
         Row(
@@ -88,6 +91,7 @@ fun EditorScreen(
             Button(onClick = onSave) { Text("حفظ") }
             OutlinedButton(onClick = onOpen) { Text("فتح") }
             OutlinedButton(onClick = onNew) { Text("جديد") }
+            extraActions()
             Text("نسخة $BUILD_TAG", Modifier.padding(top = 12.dp))
         }
         EditorCanvas(host, Modifier.weight(1f).fillMaxWidth())
@@ -148,6 +152,17 @@ private fun ControlPanel(host: EditorHost) {
                     val ok = host.edit { it.splitContours(selected) }
                     host.showNotice(if (ok) null else "الشكل يتكون من مسار واحد")
                 }) { Text("فصل الأجزاء") }
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("مع الذي تحته:", Modifier.padding(top = 10.dp))
+                for ((label, op) in listOf(
+                    "اتحاد" to BooleanOp.Union,
+                    "طرح" to BooleanOp.Subtract,
+                    "تقاطع" to BooleanOp.Intersect,
+                    "استبعاد" to BooleanOp.Exclude,
+                )) {
+                    OutlinedButton(onClick = { host.showNotice(host.edit { it.booleanWithBelow(selected, op) }) }) { Text(label) }
+                }
             }
         }
         // add shapes

@@ -4,7 +4,10 @@ import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import android.os.Handler
+import android.os.Looper
 import androidx.lifecycle.AndroidViewModel
+import studio.buttonforge.geometryandroid.SkiaBooleanOps
 import studio.buttonforge.document.CanvasSize
 import studio.buttonforge.document.Document
 import studio.buttonforge.editorui.EditorHost
@@ -24,9 +27,36 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private val recovery = File(app.filesDir, "project.recovery.bfs")
     private val files = ProjectFiles()
 
-    val host = EditorHost(blank())
+    val host = EditorHost(blank(), SkiaBooleanOps())
     var message: String? by mutableStateOf(null)
         private set
+
+    /** Output of the boolean self-check, or null when no dialog should be shown. */
+    var labReport: List<String>? by mutableStateOf(null)
+        private set
+    var labRunning: Boolean by mutableStateOf(false)
+        private set
+
+    /** Runs the boolean self-check off the main thread (the 500-point cases can take a while). */
+    fun runBooleanLab() {
+        if (labRunning) return
+        labRunning = true
+        Thread {
+            val report = try {
+                BooleanLab.run()
+            } catch (e: Throwable) {
+                listOf("فشل الاختبار: $e")
+            }
+            Handler(Looper.getMainLooper()).post {
+                labReport = report
+                labRunning = false
+            }
+        }.start()
+    }
+
+    fun closeLabReport() {
+        labReport = null
+    }
 
     /** What is on disk (saved or recovered), to tell whether there is anything new to keep. */
     private var persisted: Document? = null

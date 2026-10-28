@@ -40,6 +40,11 @@ import studio.buttonforge.editorcore.points.PointTool
 import studio.buttonforge.geometry.hittest.HitTester
 import studio.buttonforge.geometry.math.Vec2
 import studio.buttonforge.geometry.ops.ArcLengthDistribution
+import studio.buttonforge.geometry.ops.BooleanFailure
+import studio.buttonforge.geometry.ops.BooleanOp
+import studio.buttonforge.geometry.ops.BooleanOps
+import studio.buttonforge.geometry.ops.BooleanOptions
+import studio.buttonforge.geometry.ops.BooleanResult
 import studio.buttonforge.geometry.ops.CurveRefit
 import studio.buttonforge.geometry.ops.PathError
 import studio.buttonforge.geometry.ops.Resampling
@@ -64,6 +69,9 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         private set
     var state: EditorState = EditorState()
         private set
+
+    /** Supplied by the app (the editor core knows nothing about how the operations are implemented). */
+    var booleanOps: BooleanOps? = null
 
     private class AnchorDrag(
         val layerId: LayerId,
@@ -477,6 +485,59 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
             d.copy(counters = counters)
         }
         return true
+    }
+
+    /**
+     * Combines the selected shape with the shape directly below it ([op] reads "below, then selected": Subtract removes the
+     * selected shape from the one below). The result replaces both and keeps the lower shape's look.
+     * Returns null on success, otherwise a message saying why nothing changed.
+     */
+    fun booleanWithBelow(id: LayerId, op: BooleanOp): String? {
+        val ops = booleanOps ?: return "العمليات البولينية غير متاحة في هذه النسخة"
+        val loc = document.locateLayer(id) ?: return "الطبقة غير موجودة"
+        if (loc.index == 0) return "يلزم شكل مباشرة تحت الشكل المحدد"
+        val siblings = siblingsOf(loc.parent)
+        val a = siblings[loc.index] as? ShapeLayer ?: return "الطبقة المحددة ليست شكلًا"
+        val below = siblings[loc.index - 1] as? ShapeLayer ?: return "الطبقة التي تحتها ليست شكلًا"
+        val aInBelow = convertGeometry(a, below) ?: return "تعذّر تحويل الإحداثيات (مقياس صفري)"
+        val alloc = IdAllocator(document.counters)
+        val result = ops.apply(op, below.shape.geometry, aInBelow, BooleanOptions(tolerance = 0.05, nextId = alloc::nextAnchorId))
+        return when (result) {
+            is BooleanResult.Failure ->
+                "تعذّرت العملية (${result.reason}${if (result.message.isEmpty()) "" else ": " + result.message})"
+            is BooleanResult.Success -> {
+                if (result.path.contours.isEmpty()) {
+                    "النتيجة فارغة، لم يتغير شيء"
+                } else {
+                    val counters = alloc.counters()
+                    updateLayers("Boolean " + op.name) { doc ->
+                        doc.updateLayer(below.id) { node ->
+                            (node as ShapeLayer).copy(shape = below.shape.copy(geometry = result.path))
+                        }.removeLayer(id).copy(counters = counters)
+                    }
+                    selectLayer(below.id)
+                    null
+                }
+            }
+        }
+    }
+
+    /** [from]'s outlines expressed in [into]'s coordinates, so both can be combined. Null if [into] cannot be inverted. */
+    private fun convertGeometry(from: ShapeLayer, into: ShapeLayer): CompoundPath? {
+        val tf = from.shape.transform
+        val ti = into.shape.transform
+        val contours = from.shape.geometry.contours.map { c ->
+            c.copy(
+                anchors = c.anchors.map { an ->
+                    an.copy(
+                        position = ti.toLocal(tf.toWorld(an.position)) ?: return null,
+                        handleIn = ti.vectorToLocal(tf.vectorToWorld(an.handleIn)) ?: return null,
+                        handleOut = ti.vectorToLocal(tf.vectorToWorld(an.handleOut)) ?: return null,
+                    )
+                },
+            )
+        }
+        return CompoundPath(contours, from.shape.geometry.fillRule)
     }
 
     private fun siblingsOf(parent: LayerId?): List<LayerNode> =

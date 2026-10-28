@@ -14,6 +14,7 @@ import studio.buttonforge.editorcore.draw.PenController
 import studio.buttonforge.editorcore.draw.PenPoint
 import studio.buttonforge.editorcore.input.ViewportTransform
 import studio.buttonforge.geometry.math.Vec2
+import studio.buttonforge.geometry.ops.BooleanOps
 import studio.buttonforge.editorcore.input.Viewport
 import studio.buttonforge.editorcore.points.EditMode
 import studio.buttonforge.editorcore.points.EditorState
@@ -23,8 +24,8 @@ import studio.buttonforge.editorcore.points.EditorState
  * [edit] or [changed], which bump [revision] so screens that read it redraw.
  */
 @Stable
-class EditorHost(initial: Document) {
-    var session: EditorSession by mutableStateOf(EditorSession(initial))
+class EditorHost(initial: Document, private val booleanOps: BooleanOps? = null) {
+    var session: EditorSession by mutableStateOf(newSession(initial))
         private set
 
     // Copies of the session's state held as Compose state. Screens read these, so they update on their own and
@@ -79,6 +80,8 @@ class EditorHost(initial: Document) {
     private var viewHeight = 0
     private var fitted = false
 
+    private fun newSession(document: Document): EditorSession = EditorSession(document).also { it.booleanOps = booleanOps }
+
     /** Call after anything changed the session. */
     fun changed() {
         publish()
@@ -91,7 +94,7 @@ class EditorHost(initial: Document) {
     }
 
     fun replaceDocument(document: Document) {
-        session = EditorSession(document)
+        session = newSession(document)
         freehand = FreehandController(session, liveViewport)
         pen = PenController(session, liveViewport)
         fitted = false

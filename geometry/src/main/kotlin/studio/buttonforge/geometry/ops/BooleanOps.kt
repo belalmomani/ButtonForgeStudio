@@ -1,12 +1,18 @@
 package studio.buttonforge.geometry.ops
 
+import studio.buttonforge.geometry.path.AnchorId
 import studio.buttonforge.geometry.path.CompoundPath
 
 enum class BooleanOp { Union, Subtract, Intersect, Exclude }
 
+/**
+ * [tolerance] is how far the result may stray from the exact outline. [nextId] supplies ids for the anchors of the
+ * result; implementations that build new anchors fail without it.
+ */
 data class BooleanOptions(
     val tolerance: Double = 1e-6,
     val isCancelled: () -> Boolean = { false },
+    val nextId: (() -> AnchorId)? = null,
 )
 
 enum class BooleanFailure { Unsupported, Degenerate, Cancelled, Internal }

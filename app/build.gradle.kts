@@ -30,6 +30,7 @@ kotlin { jvmToolchain(17) }
 dependencies {
     implementation(project(":editor-ui"))
     implementation(project(":project-storage"))
+    implementation(project(":geometry-android"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.foundation)
