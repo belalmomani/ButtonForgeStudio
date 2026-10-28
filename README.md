@@ -55,3 +55,7 @@ detection in `CurveRefit`. Build tag "8أ".
 ## Phase 2, step 5
 Compound shapes (combine with the shape below to make holes; split back into layers) and recovery of unsaved work
 (written when the app leaves the foreground, restored at start, cleared by Save). Build tag "8ب".
+
+## Phase 2, step 6
+Selection rectangle (drag from empty space in Points mode), select all / invert, and nudge arrows whose repeated
+taps merge into one undo step. Build tag "9أ".

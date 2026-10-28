@@ -24,13 +24,32 @@ internal fun IdCounters.atLeast(other: IdCounters) =
 
 data class AnchorMove(val id: AnchorId, val from: Vec2, val to: Vec2)
 
-/** Moving points: stores only the moved anchors' old and new positions. */
-class MoveAnchorsCommand(val layerId: LayerId, val moves: List<AnchorMove>) : Command {
+/**
+ * Moving points: stores only the moved anchors' old and new positions. Nudges (same [mergeKey], same points, one
+ * starting where the last ended, within the merge window) collapse into a single history entry.
+ */
+class MoveAnchorsCommand(
+    val layerId: LayerId,
+    val moves: List<AnchorMove>,
+    val mergeKey: String? = null,
+    val timeMillis: Long = 0L,
+) : Command {
     override val label: String = "Move points"
     override val cost: Int get() = moves.size
 
     override fun apply(doc: Document): Document = place(doc) { it.to }
     override fun revert(doc: Document): Document = place(doc) { it.from }
+
+    override fun mergeWith(next: Command): Command? {
+        if (mergeKey == null || next !is MoveAnchorsCommand) return null
+        if (next.mergeKey != mergeKey || next.layerId != layerId) return null
+        if (next.timeMillis - timeMillis > MERGE_WINDOW_MILLIS) return null
+        if (next.moves.map { it.id } != moves.map { it.id }) return null
+        val ends = moves.associate { it.id to it.to }
+        if (next.moves.any { ends[it.id] != it.from }) return null
+        val finals = next.moves.associate { it.id to it.to }
+        return MoveAnchorsCommand(layerId, moves.map { AnchorMove(it.id, it.from, finals.getValue(it.id)) }, mergeKey, next.timeMillis)
+    }
 
     private fun place(doc: Document, pick: (AnchorMove) -> Vec2): Document {
         val target = moves.associate { it.id to pick(it) }

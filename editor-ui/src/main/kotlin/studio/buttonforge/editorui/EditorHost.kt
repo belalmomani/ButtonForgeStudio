@@ -59,6 +59,14 @@ class EditorHost(initial: Document) {
     var penPreview: List<PenPoint> by mutableStateOf(emptyList())
         private set
 
+    /** The selection rectangle being dragged, in world coordinates. */
+    var marquee: Pair<Vec2, Vec2>? by mutableStateOf(null)
+        private set
+
+    fun setMarquee(rect: Pair<Vec2, Vec2>?) {
+        if (marquee != rect) marquee = rect
+    }
+
     /** A proposed re-pointing waiting for the user to accept or cancel it. */
     var pending: ContourReplacement? by mutableStateOf(null)
         private set

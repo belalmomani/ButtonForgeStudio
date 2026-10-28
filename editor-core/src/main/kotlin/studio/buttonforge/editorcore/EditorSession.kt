@@ -615,6 +615,49 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         state = state.copy(selectedAnchors = if (additive) state.selectedAnchors + ids else ids)
     }
 
+    /** Selects the anchors of the selected shape whose on-screen (world) position is inside the rectangle. Returns their count. */
+    fun selectAnchorsInRect(a: Vec2, b: Vec2, additive: Boolean): Int {
+        check(state.mode == EditMode.Points) { "Points can only be selected in Points mode" }
+        val layer = state.selectedLayer?.let { document.findLayer(it) } as? ShapeLayer ?: return 0
+        val minX = kotlin.math.min(a.x, b.x)
+        val maxX = kotlin.math.max(a.x, b.x)
+        val minY = kotlin.math.min(a.y, b.y)
+        val maxY = kotlin.math.max(a.y, b.y)
+        val t = layer.shape.transform
+        val ids = layer.shape.geometry.contours.flatMap { it.anchors }
+            .filter { val w = t.toWorld(it.position); w.x in minX..maxX && w.y in minY..maxY }
+            .map { it.id }
+            .toSet()
+        state = state.copy(selectedAnchors = if (additive) state.selectedAnchors + ids else ids)
+        return ids.size
+    }
+
+    fun selectAllAnchors() {
+        check(state.mode == EditMode.Points) { "Points can only be selected in Points mode" }
+        val layer = state.selectedLayer?.let { document.findLayer(it) } as? ShapeLayer ?: return
+        state = state.copy(selectedAnchors = layer.shape.geometry.contours.flatMap { c -> c.anchors.map { it.id } }.toSet())
+    }
+
+    fun invertAnchorSelection() {
+        check(state.mode == EditMode.Points) { "Points can only be selected in Points mode" }
+        val layer = state.selectedLayer?.let { document.findLayer(it) } as? ShapeLayer ?: return
+        val all = layer.shape.geometry.contours.flatMap { c -> c.anchors.map { it.id } }.toSet()
+        state = state.copy(selectedAnchors = all - state.selectedAnchors)
+    }
+
+    /** Moves the given points by [worldDelta]. Repeated nudges within half a second become one undo step. */
+    fun nudgeAnchors(layerId: LayerId, ids: Set<AnchorId>, worldDelta: Vec2, nowMillis: Long): Boolean {
+        val layer = document.findLayer(layerId) as? ShapeLayer ?: return false
+        val local = layer.shape.transform.vectorToLocal(worldDelta) ?: return false
+        if (local == Vec2.ZERO) return false
+        val moves = layer.shape.geometry.contours.flatMap { it.anchors }
+            .filter { it.id in ids }
+            .map { AnchorMove(it.id, it.position, it.position + local) }
+        if (moves.isEmpty()) return false
+        execute(MoveAnchorsCommand(layerId, moves, "nudge", nowMillis))
+        return true
+    }
+
     fun setPointTool(tool: PointTool) {
         state = state.copy(pointTool = tool)
     }

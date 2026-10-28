@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -63,7 +64,7 @@ import studio.buttonforge.document.appearance.Color as ModelColor
 import studio.buttonforge.document.appearance.Stroke as ModelStroke
 
 /** Shown on screen so it is clear which build is installed. */
-private const val BUILD_TAG = "8ب"
+private const val BUILD_TAG = "9أ"
 
 private val POINT_COUNTS = listOf(25, 50, 100, 250, 500)
 private val SIMPLIFY_TOLERANCES = listOf(0.5, 1.0, 2.0)
@@ -191,6 +192,20 @@ private fun ControlPanel(host: EditorHost) {
         }
         if (state.mode == EditMode.Points && selected != null) {
             val ids = state.selectedAnchors
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("تحديد:", Modifier.padding(top = 10.dp))
+                OutlinedButton(onClick = { host.edit { it.selectAllAnchors() } }) { Text("الكل") }
+                OutlinedButton(onClick = { host.edit { it.invertAnchorSelection() } }) { Text("عكس") }
+                if (ids.isNotEmpty()) {
+                    // one nudge moves the points by about 4 screen pixels
+                    val step = 4.0 / host.viewport.scale
+                    Text("تحريك دقيق:", Modifier.padding(top = 10.dp))
+                    OutlinedButton(onClick = { host.edit { it.nudgeAnchors(selected, ids, Vec2(-step, 0.0), System.currentTimeMillis()) } }) { Text("◀") }
+                    OutlinedButton(onClick = { host.edit { it.nudgeAnchors(selected, ids, Vec2(step, 0.0), System.currentTimeMillis()) } }) { Text("▶") }
+                    OutlinedButton(onClick = { host.edit { it.nudgeAnchors(selected, ids, Vec2(0.0, -step), System.currentTimeMillis()) } }) { Text("▲") }
+                    OutlinedButton(onClick = { host.edit { it.nudgeAnchors(selected, ids, Vec2(0.0, step), System.currentTimeMillis()) } }) { Text("▼") }
+                }
+            }
             if (ids.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("نوع النقطة (${ids.size}):", Modifier.padding(top = 10.dp))
@@ -277,6 +292,7 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
                     var multiTouch = false
                     var moved = 0f
                     target(PointerEvent(PointerType.Down, downScreen))
+                    host.setMarquee(controller.marquee)
                     host.changed()
                     do {
                         val event = awaitPointerEvent()
@@ -308,7 +324,8 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
                             }
                             if (change.positionChanged()) change.consume()
                         }
-                        host.changed()
+                        host.setMarquee(controller.marquee)
+                    host.changed()
                     } while (event.changes.any { it.pressed })
                     if (!multiTouch) {
                         target(PointerEvent(PointerType.Up, Vec2.ZERO))
@@ -316,6 +333,7 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
                             host.edit { it.selectLayerAt(downWorld, touch.worldTolerance(host.viewport.scale)) }
                         }
                     }
+                    host.setMarquee(controller.marquee)
                     host.changed()
                 }
             },
@@ -328,6 +346,7 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
         }
         drawPointOverlay(document, editorState, vp, host.pending)
         drawStrokePreviews(host.freehandPreview, host.penPreview, vp)
+        host.marquee?.let { drawMarquee(it, vp) }
     }
 }
 
@@ -430,4 +449,13 @@ private fun DrawScope.drawStrokePreviews(freehand: List<Vec2>, pen: List<PenPoin
             drawCircle(color, radius, at, style = Stroke(width = 2.dp.toPx()))
         }
     }
+}
+
+private fun DrawScope.drawMarquee(rect: Pair<Vec2, Vec2>, vp: Viewport) {
+    val a = vp.toScreen(rect.first)
+    val b = vp.toScreen(rect.second)
+    val topLeft = Offset(kotlin.math.min(a.x, b.x).toFloat(), kotlin.math.min(a.y, b.y).toFloat())
+    val size = Size(kotlin.math.abs(a.x - b.x).toFloat(), kotlin.math.abs(a.y - b.y).toFloat())
+    drawRect(Color(0x2200897B), topLeft, size)
+    drawRect(Color(0xFF00897B), topLeft, size, style = Stroke(width = 1.5.dp.toPx()))
 }

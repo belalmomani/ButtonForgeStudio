@@ -27,7 +27,11 @@ class PointModeController(
     private var dragOrigin: Vec2? = null
     private var dragKind = DragKind.None
 
-    private enum class DragKind { None, Anchors, Handle }
+    /** The selection rectangle being dragged (world coordinates), or null. For drawing a live preview. */
+    var marquee: Pair<Vec2, Vec2>? = null
+        private set
+
+    private enum class DragKind { None, Anchors, Handle, Marquee }
 
     fun handle(event: PointerEvent) {
         when (event.type) {
@@ -63,7 +67,9 @@ class PointModeController(
                 }
                 val hit = HitTester.nearestAnchor(geometry, local, tolerance)
                 if (hit == null) {
-                    session.tapEmpty()
+                    if (!additiveSelection) session.tapEmpty()
+                    dragOrigin = world // dragging from empty space draws a selection rectangle
+                    dragKind = DragKind.Marquee
                     return
                 }
                 val ids = if (hit.id in st.selectedAnchors) {
@@ -121,6 +127,10 @@ class PointModeController(
         when (dragKind) {
             DragKind.Anchors -> session.updateAnchorDrag(delta)
             DragKind.Handle -> session.updateHandleDrag(delta)
+            DragKind.Marquee -> {
+                val world = viewport.toWorld(screen)
+                marquee = if (delta.length() * viewport.scale >= MARQUEE_MIN_PX) origin to world else null
+            }
             DragKind.None -> Unit
         }
     }
@@ -131,15 +141,25 @@ class PointModeController(
         when (dragKind) {
             DragKind.Anchors -> session.commitAnchorDrag()
             DragKind.Handle -> session.commitHandleDrag()
+            DragKind.Marquee -> {
+                val m = marquee
+                marquee = null
+                if (m != null) session.selectAnchorsInRect(m.first, m.second, additiveSelection)
+            }
             DragKind.None -> false
         }
         dragKind = DragKind.None
     }
 
     private fun onCancel() {
+        marquee = null
         if (dragOrigin == null) return
         dragOrigin = null
         dragKind = DragKind.None
         session.cancelAnchorDrag()
+    }
+
+    private companion object {
+        const val MARQUEE_MIN_PX = 6.0
     }
 }
