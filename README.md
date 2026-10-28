@@ -51,3 +51,7 @@ undo step. `Document.locateLayer` added. Build tag "7ب".
 Freehand drawing (smoothed, re-spaced and fitted into editable Béziers; shaky input does not create false corners)
 and the pen tool (tap = corner, drag = smooth point with handle, tap the first point to close). Windowed corner
 detection in `CurveRefit`. Build tag "8أ".
+
+## Phase 2, step 5
+Compound shapes (combine with the shape below to make holes; split back into layers) and recovery of unsaved work
+(written when the app leaves the foreground, restored at start, cleared by Save). Build tag "8ب".

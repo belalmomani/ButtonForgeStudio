@@ -17,6 +17,7 @@ import studio.buttonforge.document.layers.addLayer
 import studio.buttonforge.document.layers.locateLayer
 import studio.buttonforge.document.layers.moveLayer
 import studio.buttonforge.document.layers.removeLayer
+import studio.buttonforge.document.layers.updateLayer
 import studio.buttonforge.document.layers.setLocked
 import studio.buttonforge.document.layers.setVisible
 import studio.buttonforge.document.shape.Shape
@@ -47,6 +48,7 @@ import studio.buttonforge.geometry.path.AnchorId
 import studio.buttonforge.geometry.path.CompoundPath
 import studio.buttonforge.geometry.path.Contour
 import studio.buttonforge.geometry.path.CornerType
+import studio.buttonforge.geometry.path.FillRule
 import studio.buttonforge.geometry.path.HandleSide
 import studio.buttonforge.geometry.path.withCornerType
 import studio.buttonforge.geometry.path.withHandle
@@ -419,6 +421,66 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
             is GroupLayer -> child.copy(children = shiftChildren(child.children))
         }
     }
+
+    // ---------- compound shapes (holes) ----------
+
+    /**
+     * Merges the selected shape into the shape directly below it, as extra contours of one compound shape filled with the
+     * even-odd rule, so an inner outline becomes a hole. The lower shape keeps its look; the upper layer disappears.
+     * Returns false when there is no shape directly below.
+     */
+    fun combineWithBelow(id: LayerId): Boolean {
+        val loc = document.locateLayer(id) ?: return false
+        if (loc.index == 0) return false
+        val siblings = siblingsOf(loc.parent)
+        val a = siblings[loc.index] as? ShapeLayer ?: return false
+        val below = siblings[loc.index - 1] as? ShapeLayer ?: return false
+        val ta = a.shape.transform
+        val tb = below.shape.transform
+        val converted = a.shape.geometry.contours.map { c ->
+            c.copy(
+                anchors = c.anchors.map { an ->
+                    val position = tb.toLocal(ta.toWorld(an.position)) ?: return false
+                    val handleIn = tb.vectorToLocal(ta.vectorToWorld(an.handleIn)) ?: return false
+                    val handleOut = tb.vectorToLocal(ta.vectorToWorld(an.handleOut)) ?: return false
+                    an.copy(position = position, handleIn = handleIn, handleOut = handleOut)
+                },
+            )
+        }
+        val merged = below.shape.copy(geometry = CompoundPath(below.shape.geometry.contours + converted, FillRule.EvenOdd))
+        updateLayers("Combine shapes") { doc ->
+            doc.updateLayer(below.id) { node -> (node as ShapeLayer).copy(shape = merged) }.removeLayer(id)
+        }
+        selectLayer(below.id)
+        return true
+    }
+
+    /** Turns every contour after the first into its own shape layer (same look and transform), just above the original. */
+    fun splitContours(id: LayerId): Boolean {
+        val node = document.findLayer(id) as? ShapeLayer ?: return false
+        val contours = node.shape.geometry.contours
+        if (contours.size < 2) return false
+        val loc = document.locateLayer(id) ?: return false
+        val alloc = IdAllocator(document.counters)
+        val fillRule = node.shape.geometry.fillRule
+        val parts = contours.drop(1).mapIndexed { i, c ->
+            ShapeLayer(
+                alloc.nextLayerId(), node.name + " جزء " + (i + 2), node.visible, node.locked,
+                node.shape.copy(geometry = CompoundPath(listOf(c), fillRule)),
+            )
+        }
+        val kept = node.copy(shape = node.shape.copy(geometry = CompoundPath(listOf(contours[0]), fillRule)))
+        val counters = alloc.counters()
+        updateLayers("Split shape") { doc ->
+            var d = doc.updateLayer(id) { kept }
+            parts.forEachIndexed { i, part -> d = d.addLayer(part, loc.parent, loc.index + 1 + i) }
+            d.copy(counters = counters)
+        }
+        return true
+    }
+
+    private fun siblingsOf(parent: LayerId?): List<LayerNode> =
+        if (parent == null) document.layers else (document.findLayer(parent) as GroupLayer).children
 
     // ---------- drawing new paths ----------
 

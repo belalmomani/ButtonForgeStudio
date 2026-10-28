@@ -24,6 +24,15 @@ data class Transform(
         return Vec2(sx * c - sy * s + translation.x, sx * s + sy * c + translation.y)
     }
 
+    /** Converts a displacement (no translation) from local to world space. */
+    fun vectorToWorld(v: Vec2): Vec2 {
+        val sx = v.x * scale.x
+        val sy = v.y * scale.y
+        val c = cos(rotationRadians)
+        val s = sin(rotationRadians)
+        return Vec2(sx * c - sy * s, sx * s + sy * c)
+    }
+
     /** World to local, or null when the transform cannot be inverted (a zero scale). */
     fun toLocal(p: Vec2): Vec2? = vectorToLocal(p - translation)
 

@@ -36,4 +36,13 @@ class TransformTest {
         assertNull(t.toLocal(Vec2(1.0, 1.0)))
         assertNull(t.vectorToLocal(Vec2(1.0, 1.0)))
     }
+
+    @Test
+    fun vectorsRoundTripAndIgnoreTranslation() {
+        val t = Transform(Vec2(500.0, -300.0), 0.7, Vec2(2.0, 0.5))
+        val v = Vec2(3.0, -4.0)
+        val back = t.vectorToLocal(t.vectorToWorld(v))
+        assertTrue(back != null && back.distanceTo(v) < 1e-9)
+        assertEquals(t.toWorld(Vec2(1.0, 1.0)) - t.toWorld(Vec2.ZERO), t.vectorToWorld(Vec2(1.0, 1.0)))
+    }
 }

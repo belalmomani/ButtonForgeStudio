@@ -63,7 +63,7 @@ import studio.buttonforge.document.appearance.Color as ModelColor
 import studio.buttonforge.document.appearance.Stroke as ModelStroke
 
 /** Shown on screen so it is clear which build is installed. */
-private const val BUILD_TAG = "8أ"
+private const val BUILD_TAG = "8ب"
 
 private val POINT_COUNTS = listOf(25, 50, 100, 250, 500)
 private val SIMPLIFY_TOLERANCES = listOf(0.5, 1.0, 2.0)
@@ -137,6 +137,16 @@ private fun ControlPanel(host: EditorHost) {
                     Text(if (selectedNode.locked) "فتح القفل" else "قفل")
                 }
                 OutlinedButton(onClick = { host.edit { it.deleteLayer(selected) } }) { Text("حذف") }
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = {
+                    val ok = host.edit { it.combineWithBelow(selected) }
+                    host.showNotice(if (ok) null else "للدمج يلزم شكل مباشرة تحت الشكل المحدد")
+                }) { Text("دمج مع الذي تحته (ثقب)") }
+                OutlinedButton(onClick = {
+                    val ok = host.edit { it.splitContours(selected) }
+                    host.showNotice(if (ok) null else "الشكل يتكون من مسار واحد")
+                }) { Text("فصل الأجزاء") }
             }
         }
         // add shapes
