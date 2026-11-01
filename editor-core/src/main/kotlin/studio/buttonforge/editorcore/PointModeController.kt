@@ -8,6 +8,8 @@ import studio.buttonforge.editorcore.input.ViewportTransform
 import studio.buttonforge.editorcore.points.EditMode
 import studio.buttonforge.editorcore.points.PointTool
 import studio.buttonforge.editorcore.points.TouchSettings
+import studio.buttonforge.editorcore.snapping.SnapContext
+import studio.buttonforge.editorcore.snapping.SnapSettings
 import studio.buttonforge.geometry.hittest.HitTester
 import studio.buttonforge.geometry.math.Vec2
 import studio.buttonforge.geometry.path.AnchorId
@@ -20,6 +22,7 @@ class PointModeController(
     private val session: EditorSession,
     private val viewport: ViewportTransform,
     private val touch: TouchSettings = TouchSettings(),
+    private val snapProvider: () -> SnapSettings = { SnapSettings() },
 ) {
     /** UI toggle: tapping an anchor adds it to the selection instead of replacing it. */
     var additiveSelection: Boolean = false
@@ -125,7 +128,13 @@ class PointModeController(
         val origin = dragOrigin ?: return
         val delta = viewport.toWorld(screen) - origin
         when (dragKind) {
-            DragKind.Anchors -> session.updateAnchorDrag(delta)
+            DragKind.Anchors -> {
+                val snap = snapProvider()
+                session.updateAnchorDrag(
+                    delta,
+                    SnapContext(snap.gridSize, if (snap.snapToPoints) snap.thresholdPx / viewport.scale else 0.0),
+                )
+            }
             DragKind.Handle -> session.updateHandleDrag(delta)
             DragKind.Marquee -> {
                 val world = viewport.toWorld(screen)

@@ -66,7 +66,7 @@ import studio.buttonforge.document.appearance.Color as ModelColor
 import studio.buttonforge.document.appearance.Stroke as ModelStroke
 
 /** Shown on screen so it is clear which build is installed. */
-private const val BUILD_TAG = "10أ"
+private const val BUILD_TAG = "10ب"
 
 private val POINT_COUNTS = listOf(25, 50, 100, 250, 500)
 private val SIMPLIFY_TOLERANCES = listOf(0.5, 1.0, 2.0)
@@ -164,6 +164,14 @@ private fun ControlPanel(host: EditorHost) {
                     OutlinedButton(onClick = { host.showNotice(host.edit { it.booleanWithBelow(selected, op) }) }) { Text(label) }
                 }
             }
+        }
+        // helpers: grid, snapping, clipboard
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val grid = host.snap.gridSize
+            ToggleButton(if (grid == null) "شبكة: إيقاف" else "شبكة: ${grid.toInt()}", grid != null) { host.cycleGrid() }
+            ToggleButton("التقاط للنقاط", host.snap.snapToPoints) { host.togglePointSnap() }
+            OutlinedButton(onClick = { host.copySelected() }, enabled = selected != null) { Text("نسخ") }
+            OutlinedButton(onClick = { host.paste() }, enabled = host.hasClipboard) { Text("لصق") }
         }
         // add shapes
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -284,7 +292,7 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
             override fun toWorld(screen: Vec2): Vec2 = host.viewport.toWorld(screen)
         }
     }
-    val controller = remember(session, touch) { PointModeController(session, liveViewport, touch) }
+    val controller = remember(session, touch) { PointModeController(session, liveViewport, touch, snapProvider = { host.snap }) }
 
     Canvas(
         modifier
@@ -307,7 +315,7 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
                     var multiTouch = false
                     var moved = 0f
                     target(PointerEvent(PointerType.Down, downScreen))
-                    host.setMarquee(controller.marquee)
+                    host.updateMarquee(controller.marquee)
                     host.changed()
                     do {
                         val event = awaitPointerEvent()
@@ -339,7 +347,7 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
                             }
                             if (change.positionChanged()) change.consume()
                         }
-                        host.setMarquee(controller.marquee)
+                        host.updateMarquee(controller.marquee)
                     host.changed()
                     } while (event.changes.any { it.pressed })
                     if (!multiTouch) {
@@ -348,7 +356,7 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
                             host.edit { it.selectLayerAt(downWorld, touch.worldTolerance(host.viewport.scale)) }
                         }
                     }
-                    host.setMarquee(controller.marquee)
+                    host.updateMarquee(controller.marquee)
                     host.changed()
                 }
             },
@@ -359,6 +367,7 @@ private fun EditorCanvas(host: EditorHost, modifier: Modifier) {
         drawIntoCanvas { c ->
             SceneRenderer.draw(c.nativeCanvas, document, vp.scale.toFloat(), vp.offsetX.toFloat(), vp.offsetY.toFloat())
         }
+        host.snap.gridSize?.let { drawGrid(document.canvas.width, document.canvas.height, it, vp) }
         drawPointOverlay(document, editorState, vp, host.pending)
         drawStrokePreviews(host.freehandPreview, host.penPreview, vp)
         host.marquee?.let { drawMarquee(it, vp) }
@@ -473,4 +482,24 @@ private fun DrawScope.drawMarquee(rect: Pair<Vec2, Vec2>, vp: Viewport) {
     val size = Size(kotlin.math.abs(a.x - b.x).toFloat(), kotlin.math.abs(a.y - b.y).toFloat())
     drawRect(Color(0x2200897B), topLeft, size)
     drawRect(Color(0xFF00897B), topLeft, size, style = Stroke(width = 1.5.dp.toPx()))
+}
+
+private fun DrawScope.drawGrid(canvasWidth: Double, canvasHeight: Double, grid: Double, vp: Viewport) {
+    if (grid * vp.scale < 6.0) return
+    val color = Color(0x33000000)
+    fun line(ax: Double, ay: Double, bx: Double, by: Double) {
+        val a = vp.toScreen(Vec2(ax, ay))
+        val b = vp.toScreen(Vec2(bx, by))
+        drawLine(color, Offset(a.x.toFloat(), a.y.toFloat()), Offset(b.x.toFloat(), b.y.toFloat()), strokeWidth = 1f)
+    }
+    var x = 0.0
+    while (x <= canvasWidth + 1e-9) {
+        line(x, 0.0, x, canvasHeight)
+        x += grid
+    }
+    var y = 0.0
+    while (y <= canvasHeight + 1e-9) {
+        line(0.0, y, canvasWidth, y)
+        y += grid
+    }
 }

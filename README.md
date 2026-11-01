@@ -65,3 +65,7 @@ taps merge into one undo step. Build tag "9أ".
 the contours, then `CurveRefit`). The editor shows Union / Subtract / Intersect / Exclude "with the shape below".
 The top bar has a self-check button ("اختبار البولينية") that runs 8 cases x 4 operations on the device and reports
 success, point counts, agreement with the expected inside/outside, and time. Build tag "10أ".
+
+## Phase 2, step 8
+Snapping (grid 8/16/32, and onto other points; points being dragged never snap to themselves) for dragging points and for
+the pen, a grid overlay, and copy/paste of layers (also between documents). Build tag "10ب".

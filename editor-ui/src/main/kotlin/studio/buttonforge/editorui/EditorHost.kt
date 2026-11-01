@@ -8,11 +8,13 @@ import androidx.compose.runtime.setValue
 import studio.buttonforge.document.Document
 import studio.buttonforge.editorcore.ContourReplacement
 import studio.buttonforge.editorcore.EditorSession
+import studio.buttonforge.editorcore.clipboard.Clipboard
 import studio.buttonforge.editorcore.draw.DrawTool
 import studio.buttonforge.editorcore.draw.FreehandController
 import studio.buttonforge.editorcore.draw.PenController
 import studio.buttonforge.editorcore.draw.PenPoint
 import studio.buttonforge.editorcore.input.ViewportTransform
+import studio.buttonforge.editorcore.snapping.SnapSettings
 import studio.buttonforge.geometry.math.Vec2
 import studio.buttonforge.geometry.ops.BooleanOps
 import studio.buttonforge.editorcore.input.Viewport
@@ -51,8 +53,34 @@ class EditorHost(initial: Document, private val booleanOps: BooleanOps? = null) 
 
     var freehand: FreehandController = FreehandController(session, liveViewport)
         private set
-    var pen: PenController = PenController(session, liveViewport)
+    var pen: PenController = PenController(session, liveViewport, snapProvider = { snap })
         private set
+
+    /** Grid and point snapping, shared by dragging points and the pen. */
+    var snap: SnapSettings by mutableStateOf(SnapSettings())
+        private set
+
+    fun cycleGrid() {
+        val sizes = listOf(null, 8.0, 16.0, 32.0)
+        snap = snap.copy(gridSize = sizes[(sizes.indexOf(snap.gridSize) + 1) % sizes.size])
+    }
+
+    fun togglePointSnap() {
+        snap = snap.copy(snapToPoints = !snap.snapToPoints)
+    }
+
+    val clipboard = Clipboard()
+    var hasClipboard: Boolean by mutableStateOf(false)
+        private set
+
+    fun copySelected(): Boolean {
+        val id = session.state.selectedLayer ?: return false
+        val ok = session.copyLayer(id, clipboard)
+        hasClipboard = clipboard.node != null
+        return ok
+    }
+
+    fun paste(): Boolean = edit { it.pasteLayer(clipboard) } != null
 
     /** Strokes being drawn, for the live preview. */
     var freehandPreview: List<Vec2> by mutableStateOf(emptyList())
@@ -64,7 +92,7 @@ class EditorHost(initial: Document, private val booleanOps: BooleanOps? = null) 
     var marquee: Pair<Vec2, Vec2>? by mutableStateOf(null)
         private set
 
-    fun setMarquee(rect: Pair<Vec2, Vec2>?) {
+    fun updateMarquee(rect: Pair<Vec2, Vec2>?) {
         if (marquee != rect) marquee = rect
     }
 
@@ -96,7 +124,7 @@ class EditorHost(initial: Document, private val booleanOps: BooleanOps? = null) 
     fun replaceDocument(document: Document) {
         session = newSession(document)
         freehand = FreehandController(session, liveViewport)
-        pen = PenController(session, liveViewport)
+        pen = PenController(session, liveViewport, snapProvider = { snap })
         fitted = false
         fitIfNeeded(viewWidth, viewHeight)
         publish()

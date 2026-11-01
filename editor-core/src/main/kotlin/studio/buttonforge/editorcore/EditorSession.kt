@@ -30,11 +30,14 @@ import studio.buttonforge.editorcore.commands.ReplaceContourCommand
 import studio.buttonforge.editorcore.commands.SetAnchorCommand
 import studio.buttonforge.editorcore.commands.SetAppearanceCommand
 import studio.buttonforge.editorcore.commands.SetLayersCommand
+import studio.buttonforge.editorcore.clipboard.Clipboard
 import studio.buttonforge.editorcore.draw.DrawTool
 import studio.buttonforge.editorcore.draw.PenPoint
 import studio.buttonforge.editorcore.history.Command
 import studio.buttonforge.editorcore.history.CommandHistory
 import studio.buttonforge.editorcore.points.EditMode
+import studio.buttonforge.editorcore.snapping.SnapContext
+import studio.buttonforge.editorcore.snapping.Snapper
 import studio.buttonforge.editorcore.points.EditorState
 import studio.buttonforge.editorcore.points.PointTool
 import studio.buttonforge.geometry.hittest.HitTester
@@ -80,6 +83,7 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         val transform: Transform,
     ) {
         var moves: List<AnchorMove>? = null
+        var snapTargets: List<Vec2>? = null
     }
 
     private class HandleDrag(
@@ -134,13 +138,39 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         return true
     }
 
-    /** [worldDelta] is the total displacement since the drag began, in world units. Not recorded in history. */
-    fun updateAnchorDrag(worldDelta: Vec2) {
+    /**
+     * [worldDelta] is the total displacement since the drag began, in world units. Not recorded in history.
+     * With [snap], the first dragged point is pulled onto a nearby point or the grid and the others follow it unchanged.
+     */
+    fun updateAnchorDrag(worldDelta: Vec2, snap: SnapContext? = null) {
         val d = drag ?: return
-        val local = d.transform.vectorToLocal(worldDelta) ?: return
+        var delta = worldDelta
+        if (snap != null && snap.active) {
+            val primary = d.transform.toWorld(d.starts.values.first())
+            val targets = if (snap.anchorTolerance > 0.0) d.snapTargets ?: worldAnchorsExcept(d.base, d.starts.keys).also { d.snapTargets = it } else emptyList()
+            delta = Snapper.snap(primary + worldDelta, snap.gridSize, targets, snap.anchorTolerance) - primary
+        }
+        val local = d.transform.vectorToLocal(delta) ?: return
         val moves = d.starts.map { (id, p) -> AnchorMove(id, p, p + local) }
         d.moves = moves
         document = MoveAnchorsCommand(d.layerId, moves).apply(d.base)
+    }
+
+    private fun worldAnchorsExcept(doc: Document, excluded: Set<AnchorId>): List<Vec2> {
+        val out = ArrayList<Vec2>()
+        fun walk(nodes: List<LayerNode>) {
+            for (n in nodes) {
+                if (!n.visible) continue
+                when (n) {
+                    is ShapeLayer -> for (c in n.shape.geometry.contours) {
+                        for (a in c.anchors) if (a.id !in excluded) out += n.shape.transform.toWorld(a.position)
+                    }
+                    is GroupLayer -> walk(n.children)
+                }
+            }
+        }
+        walk(doc.layers)
+        return out
     }
 
     /** Records the drag as a single command. Returns false (and records nothing) if nothing moved. */
@@ -389,14 +419,36 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
         val node = document.findLayer(id) ?: return null
         val loc = document.locateLayer(id) ?: return null
         val alloc = IdAllocator(document.counters)
-        val copy = cloneNode(node, alloc, root = true)
+        val copy = cloneNode(node, alloc, root = true, offset = Vec2(20.0, 20.0))
         val counters = alloc.counters()
         updateLayers("Duplicate layer") { it.addLayer(copy, loc.parent, loc.index + 1).copy(counters = counters) }
         selectLayer(copy.id)
         return copy.id
     }
 
-    private fun cloneNode(node: LayerNode, alloc: IdAllocator, root: Boolean): LayerNode = when (node) {
+    /** Copies a layer (or group) into [clipboard]. Nothing in the document changes. */
+    fun copyLayer(id: LayerId, clipboard: Clipboard): Boolean {
+        val node = document.findLayer(id) ?: return false
+        clipboard.put(node)
+        return true
+    }
+
+    /**
+     * Pastes the clipboard content on top of the stack with new ids, shifted 20 units further for every paste.
+     * Works in any document. Returns the new layer's id, or null if the clipboard is empty.
+     */
+    fun pasteLayer(clipboard: Clipboard): LayerId? {
+        val node = clipboard.node ?: return null
+        val shift = 20.0 * clipboard.countPaste()
+        val alloc = IdAllocator(document.counters)
+        val copy = cloneNode(node, alloc, root = true, offset = Vec2(shift, shift))
+        val counters = alloc.counters()
+        updateLayers("Paste layer") { it.addLayer(copy).copy(counters = counters) }
+        selectLayer(copy.id)
+        return copy.id
+    }
+
+    private fun cloneNode(node: LayerNode, alloc: IdAllocator, root: Boolean, offset: Vec2): LayerNode = when (node) {
         is ShapeLayer -> {
             val t = node.shape.transform
             val geometry = node.shape.geometry.let { g ->
@@ -407,26 +459,26 @@ class EditorSession(initial: Document, val history: CommandHistory = CommandHist
                 name = if (root) node.name + " نسخة" else node.name,
                 shape = node.shape.copy(
                     geometry = geometry,
-                    transform = if (root) t.copy(translation = t.translation + Vec2(20.0, 20.0)) else t,
+                    transform = if (root) t.copy(translation = t.translation + offset) else t,
                 ),
             )
         }
         is GroupLayer -> {
             val newId = alloc.nextLayerId()
-            val children = node.children.map { cloneNode(it, alloc, root = false) }
-            val moved = if (root) shiftChildren(children) else children
+            val children = node.children.map { cloneNode(it, alloc, root = false, offset = offset) }
+            val moved = if (root) shiftChildren(children, offset) else children
             node.copy(id = newId, name = if (root) node.name + " نسخة" else node.name, children = moved)
         }
     }
 
-    private fun shiftChildren(children: List<LayerNode>): List<LayerNode> = children.map { child ->
+    private fun shiftChildren(children: List<LayerNode>, offset: Vec2): List<LayerNode> = children.map { child ->
         when (child) {
             is ShapeLayer -> child.copy(
                 shape = child.shape.copy(
-                    transform = child.shape.transform.copy(translation = child.shape.transform.translation + Vec2(20.0, 20.0)),
+                    transform = child.shape.transform.copy(translation = child.shape.transform.translation + offset),
                 ),
             )
-            is GroupLayer -> child.copy(children = shiftChildren(child.children))
+            is GroupLayer -> child.copy(children = shiftChildren(child.children, offset))
         }
     }
 

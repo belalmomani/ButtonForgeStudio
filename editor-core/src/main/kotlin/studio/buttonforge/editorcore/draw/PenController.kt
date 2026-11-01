@@ -4,6 +4,8 @@ import studio.buttonforge.editorcore.EditorSession
 import studio.buttonforge.editorcore.input.PointerEvent
 import studio.buttonforge.editorcore.input.PointerType
 import studio.buttonforge.editorcore.input.ViewportTransform
+import studio.buttonforge.editorcore.snapping.SnapSettings
+import studio.buttonforge.editorcore.snapping.Snapper
 import studio.buttonforge.geometry.math.Vec2
 
 /**
@@ -15,6 +17,7 @@ class PenController(
     private val viewport: ViewportTransform,
     private val closeDistancePx: Double = 24.0,
     private val dragThresholdPx: Double = 8.0,
+    private val snapProvider: () -> SnapSettings = { SnapSettings() },
 ) {
     private val points = ArrayList<PenPoint>()
     private var anchorWorld: Vec2? = null
@@ -55,14 +58,14 @@ class PenController(
             return
         }
         anchorWorld = world
-        points += PenPoint(world)
+        points += PenPoint(snapped(world))
     }
 
     private fun onMove(world: Vec2) {
         val origin = anchorWorld ?: return
         val drag = world - origin
         points[points.lastIndex] =
-            if (drag.length() * viewport.scale >= dragThresholdPx) PenPoint(origin, drag) else PenPoint(origin)
+            if (drag.length() * viewport.scale >= dragThresholdPx) PenPoint(snapped(origin), drag) else PenPoint(snapped(origin))
     }
 
     private fun onUp() {
@@ -72,6 +75,11 @@ class PenController(
             session.addPenPath(points.toList(), closed = true)
             points.clear()
         }
+    }
+
+    private fun snapped(p: Vec2): Vec2 {
+        val grid = snapProvider().gridSize ?: return p
+        return Snapper.snapToGrid(p, grid)
     }
 
     /** A second finger arrived: forget the point that this touch had just added. */
