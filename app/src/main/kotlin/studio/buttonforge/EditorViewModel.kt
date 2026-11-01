@@ -4,9 +4,13 @@ import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.lifecycle.AndroidViewModel
+import studio.buttonforge.export.ExportBundle
+import studio.buttonforge.export.Exporter
+import studio.buttonforge.export.Names
 import studio.buttonforge.geometryandroid.SkiaBooleanOps
 import studio.buttonforge.document.CanvasSize
 import studio.buttonforge.document.Document
@@ -16,6 +20,7 @@ import studio.buttonforge.storage.ReadError
 import studio.buttonforge.storage.ReadResult
 import studio.buttonforge.storage.SaveException
 import java.io.File
+import java.io.IOException
 
 /**
  * Phase 2 keeps one project in the app's private storage. "Save" writes project.bfs. Unsaved changes are written to a
@@ -30,6 +35,55 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     val host = EditorHost(blank(), SkiaBooleanOps())
     var message: String? by mutableStateOf(null)
         private set
+
+    /** The prepared export (files plus the compatibility report), shown to the user before anything is saved. */
+    var exportBundle: ExportBundle? by mutableStateOf(null)
+        private set
+    var exportRunning: Boolean by mutableStateOf(false)
+        private set
+
+    /** Builds every output off the main thread (the PNG sizes go up to 4x). Nothing is written yet. */
+    fun prepareExport() {
+        if (exportRunning) return
+        val doc = host.session.document
+        exportRunning = true
+        Thread {
+            val bundle = try {
+                Exporter.build(doc, AndroidRasterizer())
+            } catch (e: Throwable) {
+                null
+            }
+            Handler(Looper.getMainLooper()).post {
+                exportBundle = bundle
+                exportRunning = false
+                if (bundle == null) message = "تعذّر إعداد التصدير"
+            }
+        }.start()
+    }
+
+    fun closeExport() {
+        exportBundle = null
+    }
+
+    fun exportFileName(): String = Names.web(host.session.document.name) + ".zip"
+
+    /** Writes the prepared bundle as a ZIP to the place the user picked. */
+    fun writeExport(uri: Uri) {
+        val bundle = exportBundle ?: return
+        message = try {
+            val stream = getApplication<Application>().contentResolver.openOutputStream(uri)
+                ?: throw IOException("لا يمكن فتح الملف")
+            stream.use { it.write(bundle.zip()) }
+            exportBundle = null
+            "تم التصدير"
+        } catch (e: IOException) {
+            "تعذّر التصدير: ${e.message}"
+        }
+    }
+
+    fun showMessage(text: String) {
+        message = text
+    }
 
     /** Output of the boolean self-check, or null when no dialog should be shown. */
     var labReport: List<String>? by mutableStateOf(null)

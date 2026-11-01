@@ -24,15 +24,18 @@ import kotlin.math.roundToInt
  * shadows, blur, glow and blend modes are not drawn yet. Opacity is applied per fill and stroke.
  */
 object SceneRenderer {
-    fun draw(canvas: Canvas, doc: Document, scale: Float, offsetX: Float, offsetY: Float) {
+    /** [background] draws the white sheet; turn it off to render with a transparent background (for PNG export). */
+    fun draw(canvas: Canvas, doc: Document, scale: Float, offsetX: Float, offsetY: Float, background: Boolean = true) {
         canvas.save()
         canvas.translate(offsetX, offsetY)
         canvas.scale(scale, scale)
-        val background = Paint().apply {
-            color = Color.WHITE
-            style = Paint.Style.FILL
+        if (background) {
+            val sheet = Paint().apply {
+                color = Color.WHITE
+                style = Paint.Style.FILL
+            }
+            canvas.drawRect(0f, 0f, doc.canvas.width.toFloat(), doc.canvas.height.toFloat(), sheet)
         }
-        canvas.drawRect(0f, 0f, doc.canvas.width.toFloat(), doc.canvas.height.toFloat(), background)
         drawNodes(canvas, doc.layers)
         canvas.restore()
     }

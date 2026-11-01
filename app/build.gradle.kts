@@ -31,6 +31,8 @@ dependencies {
     implementation(project(":editor-ui"))
     implementation(project(":project-storage"))
     implementation(project(":geometry-android"))
+    implementation(project(":export"))
+    implementation(project(":renderer"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.foundation)

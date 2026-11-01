@@ -66,7 +66,7 @@ import studio.buttonforge.document.appearance.Color as ModelColor
 import studio.buttonforge.document.appearance.Stroke as ModelStroke
 
 /** Shown on screen so it is clear which build is installed. */
-private const val BUILD_TAG = "10ب"
+private const val BUILD_TAG = "11أ"
 
 private val POINT_COUNTS = listOf(25, 50, 100, 250, 500)
 private val SIMPLIFY_TOLERANCES = listOf(0.5, 1.0, 2.0)

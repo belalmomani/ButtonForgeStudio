@@ -69,3 +69,9 @@ success, point counts, agreement with the expected inside/outside, and time. Bui
 ## Phase 2, step 8
 Snapping (grid 8/16/32, and onto other points; points being dragged never snap to themselves) for dragging points and for
 the pen, a grid overlay, and copy/paste of layers (also between documents). Build tag "10ب".
+
+## Phase 3, step 1: export for developers
+`:export` writes, from the design: Android (VectorDrawable XML, Jetpack Compose ImageVector code, PNG per density),
+web (SVG, a self-contained HTML button with hover/press/focus/disabled CSS, PNG at 1x/2x/3x), each with a README.
+A compatibility report (kept / approximated / dropped, per target) is shown BEFORE saving. The app's "تصدير" button
+shows it, offers quick copy of the XML, Compose code, SVG or HTML, and saves everything as a ZIP. Build tag "11أ".
