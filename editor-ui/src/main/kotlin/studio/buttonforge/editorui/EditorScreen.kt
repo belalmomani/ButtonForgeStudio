@@ -66,7 +66,7 @@ import studio.buttonforge.document.appearance.Color as ModelColor
 import studio.buttonforge.document.appearance.Stroke as ModelStroke
 
 /** Shown on screen so it is clear which build is installed. */
-private const val BUILD_TAG = "11أ"
+private const val BUILD_TAG = "11ب"
 
 private val POINT_COUNTS = listOf(25, 50, 100, 250, 500)
 private val SIMPLIFY_TOLERANCES = listOf(0.5, 1.0, 2.0)
@@ -77,18 +77,27 @@ fun EditorScreen(
     onSave: () -> Unit,
     onOpen: () -> Unit,
     onNew: () -> Unit,
+    onExport: () -> Unit,
+    exporting: Boolean,
     message: String?,
     modifier: Modifier = Modifier,
     extraActions: @Composable RowScope.() -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
+        // Two short rows, so every button is visible without scrolling sideways.
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             OutlinedButton(onClick = { host.edit { it.undo() } }, enabled = host.undoCount > 0) { Text("تراجع") }
             OutlinedButton(onClick = { host.edit { it.redo() } }, enabled = host.redoCount > 0) { Text("إعادة") }
             Button(onClick = onSave) { Text("حفظ") }
+            Button(onClick = onExport, enabled = !exporting) { Text(if (exporting) "..." else "تصدير") }
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             OutlinedButton(onClick = onOpen) { Text("فتح") }
             OutlinedButton(onClick = onNew) { Text("جديد") }
             extraActions()

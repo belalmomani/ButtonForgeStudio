@@ -63,11 +63,10 @@ private fun Workspace() {
         onSave = vm::save,
         onOpen = vm::open,
         onNew = vm::newProject,
+        onExport = vm::prepareExport,
+        exporting = vm.exportRunning,
         message = vm.message,
         extraActions = {
-            Button(onClick = vm::prepareExport, enabled = !vm.exportRunning) {
-                Text(if (vm.exportRunning) "...يُجهَّز" else "تصدير")
-            }
             OutlinedButton(onClick = vm::runBooleanLab, enabled = !vm.labRunning) {
                 Text(if (vm.labRunning) "...يعمل" else "اختبار البولينية")
             }
